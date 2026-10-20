@@ -1,5 +1,5 @@
 {
-  "name": "haath",
+  "name": "@treefour/haath",
   "version": "0.0.1",
   "description": "Zero-dependency WebXR 25-joint hand kinematics, combat strike, and 3D gesture recognition engine. Battle-tested in DunJun.",
   "type": "module",
