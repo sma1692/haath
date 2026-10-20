@@ -1,0 +1,50 @@
+{
+  "name": "haath",
+  "version": "0.0.1",
+  "description": "Zero-dependency WebXR 25-joint hand kinematics, combat strike, and 3D gesture recognition engine. Battle-tested in DunJun.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --minify",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "release:build": "node scripts/syncPublic.js",
+    "release:publish": "node scripts/publishNpm.js"
+  },
+  "keywords": [
+    "webxr",
+    "hand-tracking",
+    "xr-hand",
+    "vr",
+    "meta-quest",
+    "gestures",
+    "kinematics",
+    "threejs",
+    "babylonjs",
+    "iwsdk",
+    "spatial-computing",
+    "dunjun"
+  ],
+  "author": "Tree Four Studio (S.M:A)",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/webxr": "^0.5.22",
+    "tsup": "^8.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.15"
+  }
+}
