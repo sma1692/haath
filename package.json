@@ -1,6 +1,6 @@
 {
   "name": "@treefour/haath",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Zero-dependency WebXR 25-joint hand kinematics, combat strike, and 3D gesture recognition engine. Battle-tested in DunJun.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -8,13 +8,20 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
     "dist",
+    "src",
+    "tests",
     "README.md",
     "LICENSE"
   ],
@@ -22,8 +29,10 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --minify",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "release:build": "node scripts/syncPublic.js",
-    "release:publish": "node scripts/publishNpm.js"
+    "release:publish": "node scripts/publishNpm.js",
+    "release": "npm run release:build && npm run release:publish"
   },
   "keywords": [
     "webxr",
@@ -39,10 +48,16 @@
     "spatial-computing",
     "dunjun"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sma1692/haath.git"
+  },
+  "homepage": "https://github.com/sma1692/haath#readme",
   "author": "Tree Four Studio (S.M:A)",
   "license": "MIT",
   "devDependencies": {
     "@types/webxr": "^0.5.22",
+    "@vitest/coverage-v8": "^4.0.15",
     "tsup": "^8.3.0",
     "typescript": "^5.5.0",
     "vitest": "^4.0.15"
