@@ -488,6 +488,16 @@ export class SingleHandRecognizer {
     return this.state;
   }
 
+  /**
+   * Resets the Newell's 3D circle trajectory recognizer ring buffer and transient state.
+   */
+  resetCircle(): void {
+    this._circleRecognizer.reset();
+    this.state.circle.triggered = false;
+    this.state.circle.revolutions = 0;
+    this.state.circle.meanRadius = 0;
+  }
+
   reset(): void {
     this.markUntracked();
   }

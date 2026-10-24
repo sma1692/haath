@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   add,
+  BLAST_CHARGE_DURATION_MS,
+  BLAST_CONFIG,
+  BLAST_COOLDOWN_MS,
+  BLAST_FORWARD_DOT,
+  BLAST_PALM_DIST,
+  BLAST_THRUST_SPEED,
   CIRCLE_HISTORY_FRAMES,
   CIRCLE_MAX_IRREGULARITY,
   CIRCLE_MIN_RADIUS,
@@ -28,6 +34,7 @@ import {
   dot,
   evaluateFingerExtensions,
   evaluateTriangleFromPoses,
+  evaluateBlastFromPoses,
   FINGEROPEN,
   FLOATS_PER_JOINT,
   Haath,
@@ -1316,6 +1323,17 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       expect(haath.state.left.tracked).toBe(false);
       expect(haath.state.right.tracked).toBe(false);
       expect(haath.state.twoHand.fingerCount).toBe(0);
+
+      // Recognizer getters
+      expect(haath.leftRecognizer).toBeDefined();
+      expect(haath.rightRecognizer).toBeDefined();
+      expect(haath.twoHandRecognizer).toBeDefined();
+
+      // resetCircle clears circle recognition state on individual or both hands
+      haath.resetCircle('left');
+      haath.resetCircle('right');
+      haath.resetCircle('both');
+      haath.resetCircle();
     });
 
     it('exports all canonical constants and configuration structures', () => {
@@ -1341,11 +1359,59 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       expect(CIRCLE_MAX_IRREGULARITY).toBe(0.55);
       expect(CIRCLE_MIN_REVOLUTIONS).toBe(1.2);
       expect(DISC_FIRE_COOLDOWN_MS).toBe(800);
+      expect(BLAST_PALM_DIST).toBe(0.3);
+      expect(BLAST_FORWARD_DOT).toBe(-0.4);
+      expect(BLAST_CHARGE_DURATION_MS).toBe(600);
+      expect(BLAST_THRUST_SPEED).toBe(1.0);
+      expect(BLAST_COOLDOWN_MS).toBe(800);
+      expect(BLAST_CONFIG.PALM_DIST).toBe(0.3);
       expect(HOLD_DEFAULT_DURATION_MS).toBe(1000);
       expect(HOLD_COOLDOWN_MS).toBe(800);
       expect(COLLISION_DURATION).toBe(200);
       expect(SPELL_CONFIG.HISTORY_FRAMES).toBe(90);
+      expect(SPELL_CONFIG.ARCHETYPES.TRIANGLE).toBe('triangle');
+      expect(SPELL_CONFIG.ARCHETYPES.CIRCLE).toBe('circle');
+      expect(SPELL_CONFIG.ARCHETYPES.BLAST).toBe('blast');
       expect(PHALANGES.index.length).toBe(5);
+    });
+
+    it('evaluates blast / charge orb gesture from hand poses', () => {
+      const leftPose = buildHandPoseBuffer({ wrist: [-0.1, 1.2, -0.4] });
+      const rightPose = buildHandPoseBuffer({ wrist: [0.1, 1.2, -0.4] });
+      const twoHand = createTwoHandState();
+      const leftState = createSingleHandState('left');
+      const rightState = createSingleHandState('right');
+
+      // Both hands untracked -> blast active is false
+      leftState.tracked = false;
+      rightState.tracked = false;
+      evaluateBlastFromPoses(leftPose, 0, rightPose, 0, leftState, rightState, twoHand.blast, 0.016, 100);
+      expect(twoHand.blast.active).toBe(false);
+
+      // Both hands open and forward-facing
+      leftState.tracked = true;
+      leftState.sign = 'open';
+      leftState.palmForward = { x: 0, y: 0, z: -1 };
+      leftState.palmCenter = { x: -0.1, y: 1.2, z: -0.4 };
+      leftState.wristVelocity = { x: 0, y: 0, z: 0 };
+      leftState.wristSpeed = 0;
+
+      rightState.tracked = true;
+      rightState.sign = 'open';
+      rightState.palmForward = { x: 0, y: 0, z: -1 };
+      rightState.palmCenter = { x: 0.1, y: 1.2, z: -0.4 };
+      rightState.wristVelocity = { x: 0, y: 0, z: 0 };
+      rightState.wristSpeed = 0;
+
+      evaluateBlastFromPoses(leftPose, 0, rightPose, 0, leftState, rightState, twoHand.blast, 0.3, 100);
+      expect(twoHand.blast.active).toBe(true);
+      expect(twoHand.blast.charge).toBeCloseTo(0.5, 1);
+      expect(twoHand.blast.triggered).toBe(false);
+
+      // Advance charge to completion (charge >= 1.0 triggers blast)
+      evaluateBlastFromPoses(leftPose, 0, rightPose, 0, leftState, rightState, twoHand.blast, 0.35, 400);
+      expect(twoHand.blast.triggered).toBe(true);
+      expect(twoHand.blast.charge).toBe(1.0);
     });
   });
 });

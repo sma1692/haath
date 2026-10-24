@@ -92,7 +92,22 @@ export const HOLD_COOLDOWN_MS = 800;
 // Collision debounce duration (ms)
 export const COLLISION_DURATION = 200;
 
-// Consolidated Newell's circle config object
+// Dual-palm blast / burst spell thresholds (3rd core spell archetype)
+export const BLAST_PALM_DIST = 0.30;
+export const BLAST_FORWARD_DOT = -0.4;
+export const BLAST_CHARGE_DURATION_MS = 600;
+export const BLAST_THRUST_SPEED = 1.0;
+export const BLAST_COOLDOWN_MS = 800;
+
+export const BLAST_CONFIG = {
+  PALM_DIST: BLAST_PALM_DIST,
+  FORWARD_DOT: BLAST_FORWARD_DOT,
+  CHARGE_DURATION_MS: BLAST_CHARGE_DURATION_MS,
+  THRUST_SPEED: BLAST_THRUST_SPEED,
+  COOLDOWN_MS: BLAST_COOLDOWN_MS,
+} as const;
+
+// Consolidated 3 core spell archetypes (Triangle, Circle, Blast) config object
 export const SPELL_CONFIG = {
   HISTORY_FRAMES: CIRCLE_HISTORY_FRAMES,
   MIN_SAMPLES: CIRCLE_MIN_SAMPLES,
@@ -102,6 +117,16 @@ export const SPELL_CONFIG = {
   MAX_PLANE_VARIANCE: 0.015,
   CIRCLE_MIN_REVOLUTIONS: CIRCLE_MIN_REVOLUTIONS,
   DISC_FIRE_COOLDOWN_MS: DISC_FIRE_COOLDOWN_MS,
+  // Triangle archetype
+  TRIANGLE_TIP_DIST,
+  TRIANGLE_THUMB_DIST,
+  TRIANGLE_FINGER_DOT,
+  // Blast archetype
+  BLAST_PALM_DIST,
+  BLAST_FORWARD_DOT,
+  BLAST_CHARGE_DURATION_MS,
+  BLAST_THRUST_SPEED,
+  BLAST_COOLDOWN_MS,
 } as const;
 
 // Phalanx joint-name chains per finger (metacarpal -> tip)

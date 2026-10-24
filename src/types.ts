@@ -93,10 +93,20 @@ export interface ClapState {
   doubleClap: boolean;        // True on frame 2nd clap completes within [90ms, 1100ms]
 }
 
+export type SpellArchetype = 'triangle' | 'circle' | 'blast';
+
 export interface TriangleState {
   active: boolean;
   centroid: Float32Array;     // [cx, cy, cz]
   normal: Float32Array;       // [nx, ny, nz] guaranteed nz <= 0
+}
+
+export interface BlastState {
+  active: boolean;            // True when hands maintain dual-palm blast formation
+  triggered: boolean;         // True on pulse frame when burst thrust or full charge fires
+  charge: number;             // Normalized charge level (0..1)
+  origin: Float32Array;       // [ox, oy, oz] midpoint between palms
+  direction: Float32Array;    // [dx, dy, dz] forward burst normal (nz <= 0)
 }
 
 export interface TwoHandState {
@@ -105,6 +115,7 @@ export interface TwoHandState {
   wristDistance: number;        // Euclidean distance between wrists (Infinity if untracked)
   clap: ClapState;
   triangle: TriangleState;
+  blast: BlastState;
 }
 
 export interface HaathFrameState {
@@ -136,6 +147,11 @@ export interface HaathConfig {
   circleMaxIrregularity?: number;
   circleMinRevolutions?: number;
   discFireCooldownMs?: number;
+  blastPalmDist?: number;
+  blastForwardDot?: number;
+  blastChargeDurationMs?: number;
+  blastThrustSpeed?: number;
+  blastCooldownMs?: number;
 }
 
 export interface HoldConfig {
@@ -156,6 +172,7 @@ export type HandState = SingleHandState;
 export type HaathUpdateResult = HaathFrameState;
 export type CircleResult = CircleState;
 export type TriangleResult = TriangleState;
+export type BlastResult = BlastState;
 export type CurlState = FingerExtensionState;
 export interface StrikeResult {
   type: StrikeType;
@@ -163,3 +180,4 @@ export interface StrikeResult {
   speed: number;
   momentum: Vec3;
 }
+

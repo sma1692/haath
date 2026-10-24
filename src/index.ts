@@ -2,6 +2,12 @@
 // Zero-dependency, zero-GC WebXR 25-joint hand kinematics, combat strike, and 3D gesture engine.
 
 import {
+  BLAST_CHARGE_DURATION_MS,
+  BLAST_CONFIG,
+  BLAST_COOLDOWN_MS,
+  BLAST_FORWARD_DOT,
+  BLAST_PALM_DIST,
+  BLAST_THRUST_SPEED,
   CIRCLE_HISTORY_FRAMES,
   CIRCLE_MAX_IRREGULARITY,
   CIRCLE_MIN_RADIUS,
@@ -69,6 +75,11 @@ import {
   v3Set,
   v3Sub,
 } from './math/vec3.js';
+import {
+  initGesturePreview,
+  type GesturePreviewController,
+  type GesturePreviewOptions,
+} from './handGesturePreviewOverlay.js';
 import { HoldRecognizer } from './recognizers/hold.js';
 import {
   classifyHandSign,
@@ -82,11 +93,14 @@ import {
 import { CircleTrajectoryRecognizer } from './recognizers/trajectory.js';
 import {
   createTwoHandState,
+  evaluateBlastFromPoses,
   evaluateTriangleFromPoses,
   TwoHandRecognizer,
 } from './recognizers/twoHand.js';
 import type {
   ActiveGesture,
+  BlastResult,
+  BlastState,
   CircleResult,
   CircleState,
   ClapState,
@@ -106,6 +120,7 @@ import type {
   JointPoseData,
   Quat,
   SingleHandState,
+  SpellArchetype,
   StrikeResult,
   StrikeType,
   TriangleResult,
@@ -149,6 +164,11 @@ export class Haath {
       circleMaxIrregularity: config.circleMaxIrregularity ?? CIRCLE_MAX_IRREGULARITY,
       circleMinRevolutions: config.circleMinRevolutions ?? CIRCLE_MIN_REVOLUTIONS,
       discFireCooldownMs: config.discFireCooldownMs ?? DISC_FIRE_COOLDOWN_MS,
+      blastPalmDist: config.blastPalmDist ?? BLAST_PALM_DIST,
+      blastForwardDot: config.blastForwardDot ?? BLAST_FORWARD_DOT,
+      blastChargeDurationMs: config.blastChargeDurationMs ?? BLAST_CHARGE_DURATION_MS,
+      blastThrustSpeed: config.blastThrustSpeed ?? BLAST_THRUST_SPEED,
+      blastCooldownMs: config.blastCooldownMs ?? BLAST_COOLDOWN_MS,
     };
 
     this._left = new SingleHandRecognizer('left', this._config);
@@ -207,6 +227,7 @@ export class Haath {
       this._right.getFrameOffset(0),
       nowMs,
       this._config,
+      deltaSeconds,
     );
 
     return this.state;
@@ -247,6 +268,7 @@ export class Haath {
       this._right.getFrameOffset(0),
       nowMs,
       this._config,
+      deltaSeconds,
     );
 
     return this.state;
@@ -256,6 +278,29 @@ export class Haath {
     this._left.reset();
     this._right.reset();
     this._twoHand.reset();
+  }
+
+  resetCircle(hand?: Handedness | 'both'): void {
+    if (!hand || hand === 'both') {
+      this._left.resetCircle();
+      this._right.resetCircle();
+    } else if (hand === 'left') {
+      this._left.resetCircle();
+    } else if (hand === 'right') {
+      this._right.resetCircle();
+    }
+  }
+
+  get leftRecognizer(): SingleHandRecognizer {
+    return this._left;
+  }
+
+  get rightRecognizer(): SingleHandRecognizer {
+    return this._right;
+  }
+
+  get twoHandRecognizer(): TwoHandRecognizer {
+    return this._twoHand;
   }
 
   private _ingestXRHand(
@@ -392,6 +437,12 @@ export {
   CIRCLE_MAX_IRREGULARITY,
   CIRCLE_MIN_REVOLUTIONS,
   DISC_FIRE_COOLDOWN_MS,
+  BLAST_PALM_DIST,
+  BLAST_FORWARD_DOT,
+  BLAST_CHARGE_DURATION_MS,
+  BLAST_THRUST_SPEED,
+  BLAST_COOLDOWN_MS,
+  BLAST_CONFIG,
   HOLD_SIGN_STABILITY_FRAMES,
   HOLD_COUNT_STABILITY_FRAMES,
   HOLD_DEFAULT_DURATION_MS,
@@ -441,6 +492,8 @@ export {
   classifyHandSign,
   promoteStrikeGesture,
   evaluateTriangleFromPoses,
+  evaluateBlastFromPoses,
+  initGesturePreview,
 };
 
 export type {
@@ -459,6 +512,7 @@ export type {
   SingleHandState,
   ClapState,
   TriangleState,
+  BlastState,
   TwoHandState,
   HaathFrameState,
   HaathConfig,
@@ -468,6 +522,10 @@ export type {
   HaathUpdateResult,
   CircleResult,
   TriangleResult,
+  BlastResult,
+  SpellArchetype,
   CurlState,
   StrikeResult,
+  GesturePreviewOptions,
+  GesturePreviewController,
 };

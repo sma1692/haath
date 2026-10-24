@@ -5,6 +5,11 @@
 // - LongGestureSystem.areHandsCrossed() (L599-602): Hands-crossed detector
 
 import {
+  BLAST_CHARGE_DURATION_MS,
+  BLAST_COOLDOWN_MS,
+  BLAST_FORWARD_DOT,
+  BLAST_PALM_DIST,
+  BLAST_THRUST_SPEED,
   CLAP_CONTACT_DIST,
   CLAP_DOUBLE_MAX_MS,
   CLAP_DOUBLE_MIN_MS,
@@ -17,7 +22,7 @@ import {
   TRIANGLE_TIP_DIST,
 } from '../constants.js';
 import { v3Cross, v3Dist, v3Dot, v3Len, v3Normalize, v3Sub } from '../math/vec3.js';
-import type { HaathConfig, SingleHandState, TriangleState, TwoHandState } from '../types.js';
+import type { BlastState, HaathConfig, SingleHandState, TriangleState, TwoHandState } from '../types.js';
 
 // Pre-allocated module-level scratch vectors for zero-GC triangle math
 const _dL = new Float32Array(3);
@@ -41,6 +46,13 @@ export function createTwoHandState(): TwoHandState {
       active: false,
       centroid: new Float32Array(3),
       normal: new Float32Array([0, 0, -1]),
+    },
+    blast: {
+      active: false,
+      triggered: false,
+      charge: 0,
+      origin: new Float32Array(3),
+      direction: new Float32Array([0, 0, -1]),
     },
   };
 }
@@ -147,8 +159,99 @@ export function evaluateTriangleFromPoses(
   return out;
 }
 
+/**
+ * Evaluates bimanual dual-palm forward burst / charge orb (Blast archetype).
+ * Active when both hands are open and palms face forward within palmDistThreshold.
+ * Fires triggered pulse on ballistic forward thrust or full charge.
+ */
+export function evaluateBlastFromPoses(
+  left: SingleHandState,
+  right: SingleHandState,
+  deltaSeconds: number,
+  nowMs: number,
+  out: BlastState,
+  lastFireMsRef: { lastFireMs: number },
+  palmDistThreshold: number = BLAST_PALM_DIST,
+  forwardDotThreshold: number = BLAST_FORWARD_DOT,
+  chargeDurationMs: number = BLAST_CHARGE_DURATION_MS,
+  thrustSpeedThreshold: number = BLAST_THRUST_SPEED,
+  cooldownMs: number = BLAST_COOLDOWN_MS,
+): BlastState {
+  out.triggered = false;
+
+  if (!left.tracked || !right.tracked) {
+    out.active = false;
+    out.charge = 0;
+    return out;
+  }
+
+  // Both hands must be open or thehro or have >= 4 fingers extended
+  const leftOpen = left.sign === 'open' || left.sign === 'thehro' || left.fingers.count >= 4;
+  const rightOpen = right.sign === 'open' || right.sign === 'thehro' || right.fingers.count >= 4;
+  if (!leftOpen || !rightOpen) {
+    out.active = false;
+    out.charge = 0;
+    return out;
+  }
+
+  // Distance between palms
+  const palmDist = v3Dist(left.palmPosition, right.palmPosition);
+  if (palmDist > palmDistThreshold) {
+    out.active = false;
+    out.charge = 0;
+    return out;
+  }
+
+  // Both palms must face forward (into -Z)
+  if (left.palmForward[2] > forwardDotThreshold || right.palmForward[2] > forwardDotThreshold) {
+    out.active = false;
+    out.charge = 0;
+    return out;
+  }
+
+  out.active = true;
+
+  // Origin: midpoint between palm positions
+  out.origin[0] = 0.5 * (left.palmPosition[0] + right.palmPosition[0]);
+  out.origin[1] = 0.5 * (left.palmPosition[1] + right.palmPosition[1]);
+  out.origin[2] = 0.5 * (left.palmPosition[2] + right.palmPosition[2]);
+
+  // Direction: normalized average of palmForward vectors
+  out.direction[0] = 0.5 * (left.palmForward[0] + right.palmForward[0]);
+  out.direction[1] = 0.5 * (left.palmForward[1] + right.palmForward[1]);
+  out.direction[2] = 0.5 * (left.palmForward[2] + right.palmForward[2]);
+  v3Normalize(out.direction, out.direction);
+  if (out.direction[2] > 0) {
+    out.direction[0] = -out.direction[0];
+    out.direction[1] = -out.direction[1];
+    out.direction[2] = -out.direction[2];
+  }
+
+  // Accumulate charge
+  if (chargeDurationMs > 0 && deltaSeconds > 0) {
+    out.charge = Math.min(1.0, out.charge + (deltaSeconds * 1000) / chargeDurationMs);
+  } else {
+    out.charge = 1.0;
+  }
+
+  // Check forward thrust velocity or full charge trigger
+  const avgSpeed = 0.5 * (left.motionSpeed + right.motionSpeed);
+  const thrustingForward =
+    avgSpeed >= thrustSpeedThreshold && (left.velocity[2] < 0 || right.velocity[2] < 0);
+  const canFire = nowMs - lastFireMsRef.lastFireMs > cooldownMs;
+
+  if (canFire && (thrustingForward || out.charge >= 1.0)) {
+    out.triggered = true;
+    lastFireMsRef.lastFireMs = nowMs;
+    out.charge = 0;
+  }
+
+  return out;
+}
+
 export class TwoHandRecognizer {
   private _lastClapTimeMs = -Infinity;
+  private readonly _blastFireRef = { lastFireMs: -Infinity };
   public readonly state: TwoHandState = createTwoHandState();
 
   update(
@@ -160,6 +263,7 @@ export class TwoHandRecognizer {
     rightOffset: number,
     nowMs: number,
     config: HaathConfig = {},
+    deltaSeconds = 0,
   ): TwoHandState {
     const clapOriginMinDist = config.clapOriginMinDist ?? CLAP_ORIGIN_MIN_DIST;
     const clapSeparationDist = config.clapSeparationDist ?? CLAP_SEPARATION_DIST;
@@ -169,6 +273,11 @@ export class TwoHandRecognizer {
     const triangleTipDist = config.triangleTipDist ?? TRIANGLE_TIP_DIST;
     const triangleThumbDist = config.triangleThumbDist ?? TRIANGLE_THUMB_DIST;
     const triangleFingerDot = config.triangleFingerDot ?? TRIANGLE_FINGER_DOT;
+    const blastPalmDist = config.blastPalmDist ?? BLAST_PALM_DIST;
+    const blastForwardDot = config.blastForwardDot ?? BLAST_FORWARD_DOT;
+    const blastChargeDurationMs = config.blastChargeDurationMs ?? BLAST_CHARGE_DURATION_MS;
+    const blastThrustSpeed = config.blastThrustSpeed ?? BLAST_THRUST_SPEED;
+    const blastCooldownMs = config.blastCooldownMs ?? BLAST_COOLDOWN_MS;
 
     this.state.clap.singleClap = false;
     this.state.clap.doubleClap = false;
@@ -180,6 +289,9 @@ export class TwoHandRecognizer {
       this.state.handsCrossed = false;
       this.state.wristDistance = Infinity;
       this.state.triangle.active = false;
+      this.state.blast.active = false;
+      this.state.blast.triggered = false;
+      this.state.blast.charge = 0;
       return this.state;
     }
 
@@ -238,11 +350,27 @@ export class TwoHandRecognizer {
       this.state.triangle.active = false;
     }
 
+    // 5. Dual-Palm Blast / Burst Solver
+    evaluateBlastFromPoses(
+      left,
+      right,
+      deltaSeconds,
+      nowMs,
+      this.state.blast,
+      this._blastFireRef,
+      blastPalmDist,
+      blastForwardDot,
+      blastChargeDurationMs,
+      blastThrustSpeed,
+      blastCooldownMs,
+    );
+
     return this.state;
   }
 
   reset(): void {
     this._lastClapTimeMs = -Infinity;
+    this._blastFireRef.lastFireMs = -Infinity;
     this.state.fingerCount = 0;
     this.state.handsCrossed = false;
     this.state.wristDistance = Infinity;
@@ -250,5 +378,8 @@ export class TwoHandRecognizer {
     this.state.clap.singleClap = false;
     this.state.clap.doubleClap = false;
     this.state.triangle.active = false;
+    this.state.blast.active = false;
+    this.state.blast.triggered = false;
+    this.state.blast.charge = 0;
   }
 }
