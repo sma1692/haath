@@ -57,6 +57,10 @@ export class CircleTrajectoryRecognizer {
     this._count = 0;
   }
 
+  resetCircle(): void {
+    this.reset();
+  }
+
   /**
    * Appends wrist position (x, y, z) and evaluates Newell's 3D circle trajectory.
    * Mutates `out` in-place with zero heap allocations.

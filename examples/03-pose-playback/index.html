@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>haath example 03: pose playback (no headset)</title>
+  <link rel="stylesheet" href="../shared/example.css">
+  <script type="importmap">
+    { "imports": { "@treefour/haath": "../../dist/index.js" } }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>03 · Pose playback</h1>
+    <p>No headset needed. Synthetic 25-joint hands go through <code>haath.updateFromPoses()</code>, the same pipeline as live WebXR.</p>
+  </header>
+  <main class="split">
+    <canvas id="view" width="720" height="460" aria-label="Front view of two synthetic hands"></canvas>
+    <aside>
+      <section>
+        <h2>Left hand pose</h2>
+        <div class="chips" id="left-poses"></div>
+      </section>
+      <section>
+        <h2>Right hand pose</h2>
+        <div class="chips" id="right-poses"></div>
+      </section>
+      <section>
+        <h2>Motion</h2>
+        <div class="chips">
+          <button id="punch">Right punch</button>
+          <button id="slap">Left slap</button>
+          <button id="clap">Double clap</button>
+        </div>
+      </section>
+      <section>
+        <h2>haath.state</h2>
+        <pre id="readout"></pre>
+      </section>
+    </aside>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>haath v2 — Compositional Gesture Engine Playground</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background: #080a10;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background: #0f1420;
+      border-bottom: 1px solid #1e293b;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #38bdf8;
+    }
+
+    .badge {
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .btn-xr {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-xr:hover {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      transform: translateY(-1px);
+    }
+
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 54px);
+      overflow: hidden;
+    }
+
+    /* Left Controls Sidebar */
+    .sidebar {
+      width: 330px;
+      background: #0d121c;
+      border-right: 1px solid #1e293b;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .segmented-control {
+      display: flex;
+      background: #182234;
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .segmented-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 6px 0;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+
+    .segmented-btn.active {
+      background: #0284c7;
+      color: #ffffff;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+
+    .btn-action {
+      background: #151e2e;
+      border: 1px solid #243247;
+      color: #cbd5e1;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.12s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-action:hover {
+      background: #1e2c42;
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+
+    .btn-action.active {
+      background: #0369a1;
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+
+    /* Center Visualizer Area */
+    .viewport {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: #0a0d14;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .viewport-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      pointer-events: none;
+      background: rgba(13, 18, 28, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: #94a3b8;
+    }
+
+    .viewport-overlay strong {
+      color: #38bdf8;
+    }
+
+    /* Right Diagnostics Inspector */
+    .inspector {
+      width: 320px;
+      background: #0d121c;
+      border-left: 1px solid #1e293b;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: #151e2e;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-header {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 6px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.74rem;
+    }
+
+    .metric-label {
+      color: #64748b;
+    }
+
+    .metric-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #f1f5f9;
+      font-weight: 600;
+    }
+
+    .metric-value.highlight {
+      color: #4ade80;
+    }
+
+    .metric-value.warn {
+      color: #f59e0b;
+    }
+
+    .progress-bar-bg {
+      background: #1e293b;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+
+    .progress-bar-fill {
+      background: #38bdf8;
+      height: 100%;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-group">
+      <h1>🖐️ @treefour/haath v2</h1>
+      <span class="badge">Compositional Engine</span>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button id="btnReset" class="segmented-btn" style="background: #1e293b; padding: 6px 12px; color: #cbd5e1;">Reset Engine</button>
+      <button id="btnWebXR" class="btn-xr">🥽 Enter WebXR (Quest)</button>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <!-- Left Sidebar: Simulator Controls -->
+    <div class="sidebar">
+      <div>
+        <div class="section-title">Active Hand Target</div>
+        <div class="segmented-control" id="targetHandControl">
+          <button class="segmented-btn" data-hand="left">Left Hand</button>
+          <button class="segmented-btn active" data-hand="right">Right Hand</button>
+          <button class="segmented-btn" data-hand="both">Both</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Static Pose Selector</div>
+        <div class="btn-grid" id="poseButtons">
+          <button class="btn-action active" data-pose="open_palm">✋ Open Palm</button>
+          <button class="btn-action" data-pose="fist">✊ Fist</button>
+          <button class="btn-action" data-pose="point">👉 Point</button>
+          <button class="btn-action" data-pose="pinch">🤏 Pinch</button>
+          <button class="btn-action" data-pose="peace">✌️ Peace</button>
+          <button class="btn-action" data-pose="thumbs_up">👍 Thumbs Up</button>
+          <button class="btn-action" data-pose="thumbs_down">👎 Thumbs Down</button>
+          <button class="btn-action" data-pose="horns">🤘 Horns</button>
+          <button class="btn-action" data-pose="shaka">🤙 Shaka</button>
+          <button class="btn-action" data-pose="finger_gun">👉 Finger Gun</button>
+          <button class="btn-action" data-pose="ok_sign">👌 OK Sign</button>
+          <button class="btn-action" data-pose="asl_l">📐 ASL 'L'</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Micro-Gestures (Layer 2)</div>
+        <div class="btn-grid">
+          <button class="btn-action" id="btnFlick">⚡ Finger Flick</button>
+          <button class="btn-action" id="btnSnap">🫰 Finger Snap</button>
+          <button class="btn-action" id="btnMoneyRub">🤌 Money Rub</button>
+          <button class="btn-action" id="btnTap">👆 Thumb-Index Tap</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">Bimanual Compound Gestures (Layer 3)</div>
+        <div class="btn-grid">
+          <button class="btn-action" id="btnKamehameha">💥 Kamehameha</button>
+          <button class="btn-action" id="btnBow">🏹 Bow Draw & Fire</button>
+          <button class="btn-action" id="btnPortal">🌀 Portal Rip</button>
+          <button class="btn-action" id="btnTimeout">⏱️ Timeout 'T'</button>
+          <button class="btn-action" id="btnDial">🚗 Two-Hand Dial</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">3D Trajectories (Layer 2)</div>
+        <div class="btn-grid">
+          <button class="btn-action" id="btnTrajCircle">🔄 Circle</button>
+          <button class="btn-action" id="btnTrajSwipeLeft">↩️ Swipe Left</button>
+          <button class="btn-action" id="btnTrajSwipeRight">↪️ Swipe Right</button>
+          <button class="btn-action" id="btnTrajSwipeUp">⬆️ Swipe Up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Center Viewport: Interactive 3D Canvas -->
+    <div class="viewport">
+      <canvas id="renderCanvas"></canvas>
+      <div class="viewport-overlay">
+        <div><strong>Interactive Trajectory Drag:</strong> Click & drag to move hands in 3D</div>
+        <div><strong>Depth (Z-axis):</strong> Mouse wheel or Shift + Drag</div>
+        <div id="simModeStatus">Mode: <strong>Desktop Simulator</strong></div>
+      </div>
+    </div>
+
+    <!-- Right Inspector: Live Engine Telemetry -->
+    <div class="inspector">
+      <!-- Left Hand -->
+      <div class="card">
+        <div class="card-header">
+          <span>LEFT HAND</span>
+          <span id="lTracked" class="badge">TRACKED</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Pose</span>
+          <span id="lPose" class="metric-value highlight">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Confidence</span>
+          <span id="lConfidence" class="metric-value">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Motion State</span>
+          <span id="lMotion" class="metric-value">still (0.0 m/s)</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Wrist Flip</span>
+          <span id="lFlip" class="metric-value">none</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Trajectory</span>
+          <span id="lTraj" class="metric-value">--</span>
+        </div>
+      </div>
+
+      <!-- Right Hand -->
+      <div class="card">
+        <div class="card-header">
+          <span>RIGHT HAND</span>
+          <span id="rTracked" class="badge">TRACKED</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Pose</span>
+          <span id="rPose" class="metric-value highlight">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Confidence</span>
+          <span id="rConfidence" class="metric-value">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Motion State</span>
+          <span id="rMotion" class="metric-value">still (0.0 m/s)</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Wrist Flip</span>
+          <span id="rFlip" class="metric-value">none</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Trajectory</span>
+          <span id="rTraj" class="metric-value">--</span>
+        </div>
+      </div>
+
+      <!-- Bimanual Compound -->
+      <div class="card">
+        <div class="card-header">
+          <span>BIMANUAL COMPOUND</span>
+          <span id="biHandsCrossed" class="badge">PARALLEL</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Wrist Distance</span>
+          <span id="biDist" class="metric-value">0.36 m</span>
+        </div>
+
+        <!-- Kamehameha -->
+        <div style="margin-top: 4px;">
+          <div class="metric-row">
+            <span class="metric-label">Kamehameha</span>
+            <span id="biKamehameha" class="metric-value">idle</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="kamehamehaBar" class="progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <!-- Bow -->
+        <div style="margin-top: 4px;">
+          <div class="metric-row">
+            <span class="metric-label">Bow Draw</span>
+            <span id="biBow" class="metric-value">idle</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="bowBar" class="progress-bar-fill" style="background: #4ade80;"></div>
+          </div>
+        </div>
+
+        <!-- Portal -->
+        <div style="margin-top: 4px;">
+          <div class="metric-row">
+            <span class="metric-label">Portal Rip</span>
+            <span id="biPortal" class="metric-value">idle</span>
+          </div>
+        </div>
+
+        <!-- Timeout T -->
+        <div class="metric-row">
+          <span class="metric-label">Timeout 'T'</span>
+          <span id="biTimeout" class="metric-value">inactive</span>
+        </div>
+
+        <!-- Two Hand Dial -->
+        <div class="metric-row">
+          <span class="metric-label">Virtual Dial</span>
+          <span id="biDial" class="metric-value">0.0°</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { HaathPlayground } from './app.js';
+
+    const canvas = document.getElementById('renderCanvas');
+    const playground = new HaathPlayground(canvas);
+    playground.startDesktopLoop();
+
+    // DOM Binding: Hand mode selector
+    const targetHandControl = document.getElementById('targetHandControl');
+    targetHandControl.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        targetHandControl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        playground.setActiveHandMode(btn.dataset.hand);
+      });
+    });
+
+    // DOM Binding: Pose buttons
+    const poseButtons = document.getElementById('poseButtons');
+    poseButtons.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        poseButtons.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const activeHand = targetHandControl.querySelector('.active').dataset.hand;
+        playground.setPose(activeHand, btn.dataset.pose);
+      });
+    });
+
+    // Micro-Gestures
+    document.getElementById('btnFlick').addEventListener('click', () => playground.triggerMicroGesture('flick'));
+    document.getElementById('btnSnap').addEventListener('click', () => playground.triggerMicroGesture('snap'));
+    document.getElementById('btnMoneyRub').addEventListener('click', () => playground.triggerMicroGesture('money_rub'));
+    document.getElementById('btnTap').addEventListener('click', () => playground.triggerMicroGesture('tap'));
+
+    // Bimanual Sequences
+    document.getElementById('btnKamehameha').addEventListener('click', () => playground.triggerBimanualSequence('kamehameha'));
+    document.getElementById('btnBow').addEventListener('click', () => playground.triggerBimanualSequence('bow'));
+    document.getElementById('btnPortal').addEventListener('click', () => playground.triggerBimanualSequence('portal'));
+    document.getElementById('btnTimeout').addEventListener('click', () => playground.triggerBimanualSequence('timeout'));
+    document.getElementById('btnDial').addEventListener('click', () => playground.triggerBimanualSequence('dial'));
+
+    // Trajectory Presets
+    document.getElementById('btnTrajCircle').addEventListener('click', () => playground.triggerTrajectoryPreset('circle'));
+    document.getElementById('btnTrajSwipeLeft').addEventListener('click', () => playground.triggerTrajectoryPreset('swipe_left'));
+    document.getElementById('btnTrajSwipeRight').addEventListener('click', () => playground.triggerTrajectoryPreset('swipe_right'));
+    document.getElementById('btnTrajSwipeUp').addEventListener('click', () => playground.triggerTrajectoryPreset('swipe_up'));
+
+    // Reset Engine
+    document.getElementById('btnReset').addEventListener('click', () => playground.resetEngine());
+
+    // Enter WebXR
+    const btnWebXR = document.getElementById('btnWebXR');
+    btnWebXR.addEventListener('click', async () => {
+      const ok = await playground.enterWebXR();
+      if (ok) {
+        document.getElementById('simModeStatus').innerHTML = 'Mode: <strong>WebXR Immersive VR</strong>';
+      }
+    });
+
+    // Diagnostic Telemetry Update Loop
+    setInterval(() => {
+      const res = playground.latestResult;
+      if (!res) return;
+
+      // Left Hand
+      document.getElementById('lTracked').textContent = res.left.tracked ? 'TRACKED' : 'UNTRACKED';
+      document.getElementById('lPose').textContent = res.left.pose ? res.left.pose.name : 'none';
+      document.getElementById('lConfidence').textContent = res.left.pose ? (res.left.pose.confidence * 100).toFixed(0) + '%' : '--';
+      document.getElementById('lMotion').textContent = `${res.left.motion.state} (${res.left.motion.speed.toFixed(2)} m/s)`;
+      document.getElementById('lFlip').textContent = res.left.motion.flip.triggered ? res.left.motion.flip.direction : 'none';
+      document.getElementById('lTraj').textContent = res.left.trajectory.matched ? `${res.left.trajectory.gesture} (${(res.left.trajectory.confidence * 100).toFixed(0)}%)` : '--';
+
+      // Right Hand
+      document.getElementById('rTracked').textContent = res.right.tracked ? 'TRACKED' : 'UNTRACKED';
+      document.getElementById('rPose').textContent = res.right.pose ? res.right.pose.name : 'none';
+      document.getElementById('rConfidence').textContent = res.right.pose ? (res.right.pose.confidence * 100).toFixed(0) + '%' : '--';
+      document.getElementById('rMotion').textContent = `${res.right.motion.state} (${res.right.motion.speed.toFixed(2)} m/s)`;
+      document.getElementById('rFlip').textContent = res.right.motion.flip.triggered ? res.right.motion.flip.direction : 'none';
+      document.getElementById('rTraj').textContent = res.right.trajectory.matched ? `${res.right.trajectory.gesture} (${(res.right.trajectory.confidence * 100).toFixed(0)}%)` : '--';
+
+      // Bimanual
+      document.getElementById('biHandsCrossed').textContent = res.bimanual.handsCrossed ? 'CROSSED' : 'PARALLEL';
+      document.getElementById('biDist').textContent = res.bimanual.wristDistance.toFixed(2) + ' m';
+
+      document.getElementById('biKamehameha').textContent = `${res.bimanual.kamehameha.state} ${res.bimanual.kamehameha.triggered ? '💥 TRIGGERED' : ''}`;
+      document.getElementById('kamehamehaBar').style.width = (res.bimanual.kamehameha.charge * 100).toFixed(0) + '%';
+
+      document.getElementById('biBow').textContent = `${res.bimanual.bow.state} ${res.bimanual.bow.triggered ? '🏹 RELEASED' : ''}`;
+      document.getElementById('bowBar').style.width = (res.bimanual.bow.power * 100).toFixed(0) + '%';
+
+      document.getElementById('biPortal').textContent = `${res.bimanual.portal.state} ${res.bimanual.portal.triggered ? '🌀 RIPPED' : ''} (${res.bimanual.portal.stretchDistance.toFixed(2)}m)`;
+      document.getElementById('biTimeout').textContent = res.bimanual.timeout.active ? `ACTIVE (${res.bimanual.timeout.holdDuration.toFixed(0)}ms)` : 'inactive';
+      document.getElementById('biDial').textContent = (res.bimanual.dial.angle * 180 / Math.PI).toFixed(1) + '°';
+    }, 50);
+  </script>
+</body>
+</html>

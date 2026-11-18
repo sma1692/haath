@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>haath example 01: Three.js hand tracking</title>
+  <link rel="stylesheet" href="../shared/example.css">
+  <style>body { overflow: hidden; } canvas { border: 0; border-radius: 0; }</style>
+  <script type="importmap">
+    {
+      "imports": {
+        "@treefour/haath": "../../dist/index.js",
+        "three": "https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h1>01 · Three.js</h1>
+    <p>Enter VR on a Quest with hand tracking. Punch, slap, or poke the orbs. Hold a thumbs up for one second to reset them.</p>
+    <p id="status">Waiting for an XR session.</p>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

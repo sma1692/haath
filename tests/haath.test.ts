@@ -48,9 +48,11 @@ import {
   intersectLaserSphere,
   intersectSphereSphere,
   isFingerExtendedCurl,
+  isHandAnatomicallyValid,
   isThumbReallyOut,
   JOINT_COUNT,
   JOINT_INDEX,
+  MIN_ANATOMICAL_BONE_LENGTH,
   normalize,
   PALM_COLLIDER_RADIUS,
   PHALANGES,
@@ -85,192 +87,13 @@ import {
   type HandPoseInput,
   type JointName,
 } from '../src/index.js';
+import {
+  FINGERTIP_COLLIDER_RADIUS,
+  testHandSphereCollision,
+  WRIST_COLLIDER_RADIUS,
+} from '../src/index.js';
 
-interface FingerBuildOpts {
-  thumb?: boolean;
-  index?: boolean;
-  middle?: boolean;
-  ring?: boolean;
-  pinky?: boolean;
-  wrist?: [number, number, number];
-  handDir?: [number, number, number]; // Direction of extended fingers (default [0, 0, -1])
-  thumbDir?: [number, number, number]; // Direction of extended thumb (default [1, 0, 0])
-  pinch?: boolean;
-  scale?: number;
-}
-
-/**
- * Helper that builds a realistic 25-joint pose buffer (175 floats) with controllable
- * finger extension states, wrist position, hand orientation, and scale.
- */
-function buildHandPoseBuffer(opts: FingerBuildOpts = {}): Float32Array {
-  const buf = new Float32Array(JOINT_COUNT * FLOATS_PER_JOINT);
-  const [wx, wy, wz] = opts.wrist ?? [-0.2, 1.2, -0.4];
-  const scale = opts.scale ?? 1.0;
-
-  // Normalize forward direction (default pointing forward -Z)
-  let [fx, fy, fz] = opts.handDir ?? [0, 0, -1];
-  const fLen = Math.hypot(fx, fy, fz) || 1;
-  fx /= fLen;
-  fy /= fLen;
-  fz /= fLen;
-
-  // Orthogonal lateral axis for knuckle spread
-  let rx = 1, ry = 0, rz = 0;
-  if (Math.abs(fx) > 0.9) {
-    rx = 0; ry = 1; rz = 0;
-  }
-  // Right = cross(f, r)
-  let ux = fy * rz - fz * ry;
-  let uy = fz * rx - fx * rz;
-  let uz = fx * ry - fy * rx;
-  const uLen = Math.hypot(ux, uy, uz) || 1;
-  ux /= uLen;
-  uy /= uLen;
-  uz /= uLen;
-
-  // Curl direction (perpendicular to finger forward and lateral)
-  const cx = fy * uz - fz * uy;
-  const cy = fz * ux - fx * uz;
-  const cz = fx * uy - fy * ux;
-
-  function setJoint(idx: number, x: number, y: number, z: number, qx = 0, qy = 0, qz = 0, qw = 1) {
-    const base = idx * FLOATS_PER_JOINT;
-    buf[base] = x;
-    buf[base + 1] = y;
-    buf[base + 2] = z;
-    buf[base + 3] = qx;
-    buf[base + 4] = qy;
-    buf[base + 5] = qz;
-    buf[base + 6] = qw;
-  }
-
-  setJoint(JOINT_INDEX.WRIST, wx, wy, wz);
-
-  const fingers = [
-    {
-      open: opts.index ?? false,
-      spread: -0.03 * scale,
-      joints: [
-        JOINT_INDEX.INDEX_METACARPAL,
-        JOINT_INDEX.INDEX_PROXIMAL,
-        JOINT_INDEX.INDEX_INTERMEDIATE,
-        JOINT_INDEX.INDEX_DISTAL,
-        JOINT_INDEX.INDEX_TIP,
-      ],
-    },
-    {
-      open: opts.middle ?? false,
-      spread: -0.01 * scale,
-      joints: [
-        JOINT_INDEX.MIDDLE_METACARPAL,
-        JOINT_INDEX.MIDDLE_PROXIMAL,
-        JOINT_INDEX.MIDDLE_INTERMEDIATE,
-        JOINT_INDEX.MIDDLE_DISTAL,
-        JOINT_INDEX.MIDDLE_TIP,
-      ],
-    },
-    {
-      open: opts.ring ?? false,
-      spread: 0.01 * scale,
-      joints: [
-        JOINT_INDEX.RING_METACARPAL,
-        JOINT_INDEX.RING_PROXIMAL,
-        JOINT_INDEX.RING_INTERMEDIATE,
-        JOINT_INDEX.RING_DISTAL,
-        JOINT_INDEX.RING_TIP,
-      ],
-    },
-    {
-      open: opts.pinky ?? false,
-      spread: 0.03 * scale,
-      joints: [
-        JOINT_INDEX.PINKY_METACARPAL,
-        JOINT_INDEX.PINKY_PROXIMAL,
-        JOINT_INDEX.PINKY_INTERMEDIATE,
-        JOINT_INDEX.PINKY_DISTAL,
-        JOINT_INDEX.PINKY_TIP,
-      ],
-    },
-  ];
-
-  for (const f of fingers) {
-    const [mIdx, pIdx, iIdx, dIdx, tIdx] = f.joints;
-    const mx = wx + ux * f.spread + fx * 0.03 * scale;
-    const my = wy + uy * f.spread + fy * 0.03 * scale;
-    const mz = wz + uz * f.spread + fz * 0.03 * scale;
-
-    const px = mx + fx * 0.04 * scale;
-    const py = my + fy * 0.04 * scale;
-    const pz = mz + fz * 0.04 * scale;
-
-    setJoint(mIdx, mx, my, mz);
-    setJoint(pIdx, px, py, pz);
-
-    if (f.open) {
-      // Collinear straight segments along f
-      setJoint(iIdx, px + fx * 0.03 * scale, py + fy * 0.03 * scale, pz + fz * 0.03 * scale);
-      setJoint(dIdx, px + fx * 0.05 * scale, py + fy * 0.05 * scale, pz + fz * 0.05 * scale);
-      setJoint(tIdx, px + fx * 0.07 * scale, py + fy * 0.07 * scale, pz + fz * 0.07 * scale);
-    } else {
-      // Curled: intermediate bends 90 deg along c, tip bends back -f (dot product <= 0)
-      const ix = px + cx * 0.025 * scale;
-      const iy = py + cy * 0.025 * scale;
-      const iz = pz + cz * 0.025 * scale;
-      setJoint(iIdx, ix, iy, iz);
-      setJoint(dIdx, ix - fx * 0.015 * scale, iy - fy * 0.015 * scale, iz - fz * 0.015 * scale);
-      setJoint(tIdx, ix - fx * 0.025 * scale, iy - fy * 0.025 * scale, iz - fz * 0.025 * scale);
-    }
-  }
-
-  // Thumb placement
-  const tMetaX = wx + ux * (-0.035 * scale) + fx * 0.02 * scale;
-  const tMetaY = wy + uy * (-0.035 * scale) + fy * 0.02 * scale;
-  const tMetaZ = wz + uz * (-0.035 * scale) + fz * 0.02 * scale;
-  setJoint(JOINT_INDEX.THUMB_METACARPAL, tMetaX, tMetaY, tMetaZ);
-
-  if (opts.pinch) {
-    // Place thumb tip within 1cm of index tip
-    const idxTipOff = JOINT_INDEX.INDEX_TIP * FLOATS_PER_JOINT;
-    const itx = buf[idxTipOff];
-    const ity = buf[idxTipOff + 1];
-    const itz = buf[idxTipOff + 2];
-    setJoint(JOINT_INDEX.THUMB_PROXIMAL, (tMetaX + itx) * 0.5, (tMetaY + ity) * 0.5, (tMetaZ + itz) * 0.5);
-    setJoint(JOINT_INDEX.THUMB_DISTAL, itx - 0.01, ity, itz);
-    setJoint(JOINT_INDEX.THUMB_TIP, itx - 0.005, ity, itz);
-  } else if (opts.thumb) {
-    // Extended outward far from middle-inter (> palm width ~0.06m * scale)
-    let [tx, ty, tz] = opts.thumbDir ?? [-ux, -uy, -uz];
-    const tLen = Math.hypot(tx, ty, tz) || 1;
-    tx /= tLen;
-    ty /= tLen;
-    tz /= tLen;
-    setJoint(JOINT_INDEX.THUMB_PROXIMAL, tMetaX + tx * 0.03 * scale, tMetaY + ty * 0.03 * scale, tMetaZ + tz * 0.03 * scale);
-    setJoint(JOINT_INDEX.THUMB_DISTAL, tMetaX + tx * 0.06 * scale, tMetaY + ty * 0.06 * scale, tMetaZ + tz * 0.06 * scale);
-    setJoint(JOINT_INDEX.THUMB_TIP, tMetaX + tx * 0.095 * scale, tMetaY + ty * 0.095 * scale, tMetaZ + tz * 0.095 * scale);
-  } else {
-    // Tucked close to middle-finger-phalanx-intermediate (< palm width)
-    const midInterOff = JOINT_INDEX.MIDDLE_INTERMEDIATE * FLOATS_PER_JOINT;
-    const mix = buf[midInterOff];
-    const miy = buf[midInterOff + 1];
-    const miz = buf[midInterOff + 2];
-    setJoint(JOINT_INDEX.THUMB_PROXIMAL, (tMetaX + mix) * 0.5, (tMetaY + miy) * 0.5, (tMetaZ + miz) * 0.5);
-    setJoint(
-      JOINT_INDEX.THUMB_DISTAL,
-      mix - cx * 0.015 * scale - fx * 0.015 * scale,
-      miy - cy * 0.015 * scale - fy * 0.015 * scale,
-      miz - cz * 0.015 * scale - fz * 0.015 * scale,
-    );
-    setJoint(
-      JOINT_INDEX.THUMB_TIP,
-      mix - cx * 0.025 * scale - fx * 0.015 * scale,
-      miy - cy * 0.025 * scale - fy * 0.015 * scale,
-      miz - cz * 0.025 * scale - fz * 0.015 * scale,
-    );
-  }
-
-  return buf;
-}
+import { buildHandPoseBuffer } from './fixtures/handPose.js';
 
 describe('Phase 2: haath Gesture & Kinematics Engine', () => {
   describe('1. Per-Finger Curl & Scale-Invariant Thumb Detection', () => {
@@ -393,9 +216,9 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       expect(haath.updateFromPoses(nicheDown, null, 0.016, 132).left.sign).toBe('niche');
     });
 
-    it('classifies gun (single & double barrel), poke, and pinch (with !indexOpen guard)', () => {
-      const gunDouble = buildHandPoseBuffer({ index: true, middle: true });
-      expect(haath.updateFromPoses(gunDouble, null, 0.016, 200).left.sign).toBe('gun');
+    it('classifies peace, gun (single finger + thumb out), poke, and pinch (with !indexOpen guard)', () => {
+      const peace = buildHandPoseBuffer({ index: true, middle: true, splayDeg: 20 });
+      expect(haath.updateFromPoses(peace, null, 0.016, 200).left.sign).toBe('peace');
 
       const gunSingle = buildHandPoseBuffer({ thumb: true, index: true });
       expect(haath.updateFromPoses(gunSingle, null, 0.016, 216).left.sign).toBe('gun');
@@ -429,7 +252,7 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
   });
 
   describe('3. Ballistic Strike Velocity Gate & Aiming Vectors', () => {
-    it('promotes fist -> punch (> 1.3 m/s) and open/thehro -> slap (> 1.8 m/s)', () => {
+    it('promotes fist -> punch (> 1.0 m/s) and open/thehro -> slap (> 1.4 m/s)', () => {
       const haath = new Haath();
 
       // Frame 1: stationary fist at z = -0.3
@@ -444,7 +267,7 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       state = haath.updateFromPoses(fist2, null, 0.02, 120);
       expect(state.left.sign).toBe('fist');
       expect(state.left.motionSpeed).toBeCloseTo(2.0, 3);
-      expect(state.left.velocity[2]).toBeCloseTo(-0.04, 4);
+      expect(state.left.velocity[2]).toBeCloseTo(-2.0, 3); // m/s
       expect(state.left.gesture).toBe('punch');
 
       // Frame 3: open hand moves 0.05m in 0.02s => 2.5 m/s (> 1.8 m/s SLAP_SPEED)
@@ -660,14 +483,15 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
   describe('7. Dwell / Hold Stability Recognizer', () => {
     it('requires candidate frame stability before accumulating progress and enforces cooldown', () => {
       const hold = new HoldRecognizer<string>({
-        stabilityFrames: HOLD_SIGN_STABILITY_FRAMES, // 10 frames
+        stabilityFrames: HOLD_SIGN_STABILITY_FRAMES, // 6 frames (was 10)
         holdDurationMs: 500,
         cooldownMs: 800,
       });
 
       let now = 1000;
-      // First 9 frames: stabilizing (progress = 0, active = false)
-      for (let i = 0; i < 9; i++) {
+      // First (stabilityFrames - 1) frames: stabilizing (progress = 0, active = false)
+      // for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < HOLD_SIGN_STABILITY_FRAMES - 1; i++) {
         const s = hold.update('thehro', 50, now);
         expect(s.active).toBe(false);
         expect(s.progress).toBe(0);
@@ -675,7 +499,7 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
         now += 50;
       }
 
-      // 10th frame locks candidate and starts accumulating dwell time
+      // Last stability frame locks candidate and starts accumulating dwell time
       let s = hold.update('thehro', 100, now);
       expect(s.active).toBe(true);
       expect(s.candidate).toBe('thehro');
@@ -1140,40 +964,45 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       rState.tracked = true;
       lState.sign = 'open';
       rState.sign = 'open';
+      // Palm-facing clap gate: open palms facing each other (fails closed without joint buffers)
+      const lBuf = buildHandPoseBuffer({ index: true, middle: true, ring: true, pinky: true, wrist: [-0.05, 1.2, -0.4] });
+      const rBuf = buildHandPoseBuffer({ index: true, middle: true, ring: true, pinky: true, wrist: [0.05, 1.2, -0.4] });
+      lState.palmCenter.set([-0.05, 1.2, -0.4]);
+      rState.palmCenter.set([0.05, 1.2, -0.4]);
 
       // Origin guard: wrists at (0, 0, 0) (< 0.05m from origin) -> ignored
       lState.wristPosition.set([0.01, 0, 0]);
       rState.wristPosition.set([0.02, 0, 0]);
-      twoHand.update(lState, rState, null, -1, null, -1, 100);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 100);
       expect(twoHand.state.clap.singleClap).toBe(false);
       expect(twoHand.state.triangle.active).toBe(false);
 
       // Valid origin: first clap at t = 100ms
       lState.wristPosition.set([-0.05, 1.2, -0.4]);
       rState.wristPosition.set([0.05, 1.2, -0.4]);
-      twoHand.update(lState, rState, null, -1, null, -1, 100);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 100);
       expect(twoHand.state.clap.singleClap).toBe(true);
       expect(twoHand.state.clap.doubleClap).toBe(false);
 
       // Separate at t = 120ms
       lState.wristPosition.set([-0.15, 1.2, -0.4]);
       rState.wristPosition.set([0.15, 1.2, -0.4]);
-      twoHand.update(lState, rState, null, -1, null, -1, 120);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 120);
 
       // Second contact too early at t = 150ms (elapsed = 50ms < 90ms) -> singleClap only, not doubleClap
       lState.wristPosition.set([-0.05, 1.2, -0.4]);
       rState.wristPosition.set([0.05, 1.2, -0.4]);
-      twoHand.update(lState, rState, null, -1, null, -1, 150);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 150);
       expect(twoHand.state.clap.singleClap).toBe(true);
       expect(twoHand.state.clap.doubleClap).toBe(false);
 
       // Separate and contact too late at t = 2000ms (elapsed = 1850ms > 1100ms) -> singleClap only
       lState.wristPosition.set([-0.15, 1.2, -0.4]);
       rState.wristPosition.set([0.15, 1.2, -0.4]);
-      twoHand.update(lState, rState, null, -1, null, -1, 500);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 500);
       lState.wristPosition.set([-0.05, 1.2, -0.4]);
       rState.wristPosition.set([0.05, 1.2, -0.4]);
-      twoHand.update(lState, rState, null, -1, null, -1, 2000);
+      twoHand.update(lState, rState, lBuf, 0, rBuf, 0, 2000);
       expect(twoHand.state.clap.singleClap).toBe(true);
       expect(twoHand.state.clap.doubleClap).toBe(false);
 
@@ -1342,8 +1171,11 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       expect(FINGEROPEN).toBe(0.1);
       expect(DIRECTION_THRESHOLD).toBe(0.72);
       expect(PINCH_DIST).toBe(0.03);
-      expect(PUNCH_SPEED).toBe(1.3);
-      expect(SLAP_SPEED).toBe(1.8);
+      // expect(PUNCH_SPEED).toBe(1.3);
+      // expect(SLAP_SPEED).toBe(1.8);
+      expect(PUNCH_SPEED).toBe(1.0);
+      expect(SLAP_SPEED).toBe(1.4);
+      // expect(SLAP_SPEED).toBe(1.5);
       expect(PALM_COLLIDER_RADIUS).toBe(0.05);
       expect(TRIANGLE_TIP_DIST).toBe(0.12);
       expect(TRIANGLE_THUMB_DIST).toBe(0.14);
@@ -1413,5 +1245,121 @@ describe('Phase 2: haath Gesture & Kinematics Engine', () => {
       expect(twoHand.blast.triggered).toBe(true);
       expect(twoHand.blast.charge).toBe(1.0);
     });
+
+    it('17. drops collapsed WebXR joints (< 0.03m bone lengths) and resets velocity/gestures', () => {
+      const haath = new Haath();
+      const validHand = buildHandPoseBuffer({ open: true, wrist: [0, 1.2, -0.4] });
+      const state1 = haath.updateFromPoses(validHand, null, 0.016, 100);
+      expect(state1.left.tracked).toBe(true);
+
+      // Collapsed hand: all joints set to wrist (0 distance between joints)
+      const collapsedHand = new Float32Array(JOINT_COUNT * FLOATS_PER_JOINT);
+      // All joints at [0.5, 0.5, 0.5]
+      for (let i = 0; i < JOINT_COUNT; i++) {
+        collapsedHand[i * FLOATS_PER_JOINT] = 0.5;
+        collapsedHand[i * FLOATS_PER_JOINT + 1] = 0.5;
+        collapsedHand[i * FLOATS_PER_JOINT + 2] = 0.5;
+        collapsedHand[i * FLOATS_PER_JOINT + 6] = 1;
+      }
+
+      expect(isHandAnatomicallyValid(collapsedHand)).toBe(false);
+
+      const state2 = haath.updateFromPoses(collapsedHand, null, 0.016, 116);
+      expect(state2.left.tracked).toBe(false);
+      expect(state2.left.gesture).toBe('idle');
+      expect(state2.left.motionSpeed).toBe(0);
+
+      // Re-entering valid hand does not cause a velocity spike
+      const validHandMoved = buildHandPoseBuffer({ open: true, wrist: [0.8, 1.2, -0.4] });
+      const state3 = haath.updateFromPoses(validHandMoved, null, 0.016, 132);
+      expect(state3.left.tracked).toBe(true);
+      expect(state3.left.motionSpeed).toBe(0); // 1st frame after untracked resets history
+      expect(state3.left.gesture).not.toBe('punch');
+      expect(state3.left.gesture).not.toBe('slap');
+    });
+  });
+});
+
+describe('Hand-to-Sphere Environment Collision', () => {
+  function makeHand() {
+    const h = createSingleHandState();
+    h.tracked = true;
+    h.gesture = 'idle';
+    h.wristPosition.set([0, 1.2, -0.4]);
+    h.palmCenter.set([0, 1.2, -0.45]);
+    h.indexTipPosition.set([0, 1.2, -0.58]);
+    return h;
+  }
+
+  it('computes palmCenter at the middle metacarpal midpoint and raw indexTipPosition', () => {
+    const haath = new Haath();
+    const pose = buildHandPoseBuffer({ index: true, middle: true, ring: true, pinky: true, thumb: true });
+    const s = haath.updateFromPoses(pose, null, 0.016, 100).left;
+    const mm = JOINT_INDEX.MIDDLE_METACARPAL * FLOATS_PER_JOINT;
+    const mp = JOINT_INDEX.MIDDLE_PROXIMAL * FLOATS_PER_JOINT;
+    const it = JOINT_INDEX.INDEX_TIP * FLOATS_PER_JOINT;
+    for (let k = 0; k < 3; k++) {
+      expect(s.palmCenter[k]).toBeCloseTo(0.5 * (pose[mm + k] + pose[mp + k]), 5);
+      expect(s.indexTipPosition[k]).toBeCloseTo(pose[it + k], 5);
+    }
+    expect(s.hasPrevPalm).toBe(false);
+    const s2 = haath.updateFromPoses(pose, null, 0.016, 116).left;
+    expect(s2.hasPrevPalm).toBe(true);
+    haath.updateFromPoses(null, null, 0.016, 132);
+    expect(haath.state.left.hasPrevPalm).toBe(false);
+  });
+
+  it('hits on palm, index tip, and wrist spheres', () => {
+    const h = makeHand();
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.02)).toBe('palm');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.60, 0.01)).toBe('indexTip');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.35, 0.02)).toBe('wrist');
+    expect(testHandSphereCollision(h, 0.5, 1.2, -0.45, 0.05)).toBe('none');
+    expect(WRIST_COLLIDER_RADIUS).toBe(0.04);
+    expect(FINGERTIP_COLLIDER_RADIUS).toBe(0.025);
+  });
+
+  it('touch / consumable mode accepts idle hands; combat rejects idle', () => {
+    const h = makeHand();
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { mode: 'consumable' })).toBe('palm');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { mode: 'combat' })).toBe('none');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { mode: 'combat', gesture: 'punch' })).toBe('palm');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { mode: 'combat', gesture: 'slap', requiredGesture: 'punch' })).toBe('none');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { mode: 'combat', gesture: 'slap', requiredGesture: ['punch', 'slap'] })).toBe('palm');
+  });
+
+  it('untracked hands never collide', () => {
+    const h = makeHand();
+    h.tracked = false;
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05)).toBe('none');
+  });
+
+  it('swept test catches a fast target that tunnels through the palm between frames', () => {
+    const h = makeHand();
+    h.prevPalmCenter.set(h.palmCenter);
+    h.hasPrevPalm = true;
+    // Target moved 2.5 m/s * 0.04s = 0.10m in +Z, from 6cm in front of the palm to 4cm behind it
+    const opts = { prevTargetX: 0, prevTargetY: 1.2, prevTargetZ: -0.51 };
+    expect(testHandSphereCollision(h, 0, 1.2, -0.41 + 0.2, 0.01, { swept: false })).toBe('none');
+    expect(testHandSphereCollision(h, 0, 1.25, -0.37, 0.005, { ...opts, prevTargetY: 1.25, swept: false })).toBe('none');
+    expect(testHandSphereCollision(h, 0, 1.25, -0.37, 0.005, { ...opts, prevTargetY: 1.25 })).toBe('sweep');
+  });
+
+  it('combat cooldown suppresses a second hit inside the window', () => {
+    const h = makeHand();
+    const tracker = new CollisionCooldownTracker(200);
+    const opts = { mode: 'combat' as const, gesture: 'punch', cooldown: tracker, targetId: 'e1', handedness: 'left', nowMs: 1000 };
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, opts)).toBe('palm');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { ...opts, nowMs: 1100 })).toBe('none');
+    expect(testHandSphereCollision(h, 0, 1.2, -0.45, 0.05, { ...opts, nowMs: 1300 })).toBe('palm');
+  });
+
+  it('Haath.testHandSphere routes to the requested hand', () => {
+    const haath = new Haath();
+    const pose = buildHandPoseBuffer({ index: true, middle: true, ring: true, pinky: true, thumb: true });
+    const s = haath.updateFromPoses(null, pose, 0.016, 100).right;
+    const pc = s.palmCenter;
+    expect(haath.testHandSphere('right', pc[0], pc[1], pc[2], 0.02)).toBe('palm');
+    expect(haath.testHandSphere('left', pc[0], pc[1], pc[2], 0.02)).toBe('none');
   });
 });

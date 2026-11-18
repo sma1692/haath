@@ -24,5 +24,6 @@ function run(cmd, cwd) {
 }
 
 console.log(`\n[publish] Publishing ${pkg.name}@${pkg.version} to npm...`);
-run('npm publish --access public', PUBLIC_DIR);
+const provenanceFlag = process.env.CI ? ' --provenance' : '';
+run(`npm publish --access public${provenanceFlag}`, PUBLIC_DIR);
 console.log(`\n[publish] Done. https://www.npmjs.com/package/${pkg.name}`);

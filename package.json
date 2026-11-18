@@ -1,7 +1,7 @@
 {
   "name": "@treefour/haath",
-  "version": "0.0.2",
-  "description": "Zero-dependency WebXR 25-joint hand kinematics, combat strike, and 3D gesture recognition engine. Battle-tested in DunJun.",
+  "version": "0.0.7",
+  "description": "Zero-dependency WebXR 25-joint hand kinematics, combat strike, swipe, and 3D gesture recognition engine. Battle-tested in DunJun.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,23 +16,61 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    }
+    },
+    "./v2": {
+      "import": {
+        "types": "./dist/v2.d.ts",
+        "default": "./dist/v2.js"
+      },
+      "require": {
+        "types": "./dist/v2.d.cts",
+        "default": "./dist/v2.cjs"
+      }
+    },
+    "./debug": {
+      "import": {
+        "types": "./dist/debug.d.ts",
+        "default": "./dist/debug.js"
+      },
+      "require": {
+        "types": "./dist/debug.d.cts",
+        "default": "./dist/debug.cjs"
+      }
+    },
+    "./emulator": {
+      "import": {
+        "types": "./dist/emulator.d.ts",
+        "default": "./dist/emulator.js"
+      },
+      "require": {
+        "types": "./dist/emulator.d.cts",
+        "default": "./dist/emulator.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
+  "sideEffects": false,
   "files": [
     "dist",
-    "src",
-    "tests",
+    "!dist/**/*.map",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean --minify",
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "playground": "npm run playground:build && node scripts/servePlayground.js",
+    "playground:vite": "npm run playground:build && vite --open /playground/",
+    "examples": "npm run build && node scripts/servePlayground.js",
+    "site:build": "npm run build && node site/build.mjs",
+    "site:dev": "npm run build && node site/build.mjs --serve",
     "release:build": "node scripts/syncPublic.js",
     "release:publish": "node scripts/publishNpm.js",
-    "release": "npm run release:build && npm run release:publish"
+    "release": "npm run release:build && npm run release:publish",
+    "playground:build": "esbuild playground/app.ts --bundle --format=esm --target=es2022 --outfile=playground/app.js",
+    "bench": "vitest bench --run"
   },
   "keywords": [
     "webxr",
@@ -46,13 +84,25 @@
     "babylonjs",
     "iwsdk",
     "spatial-computing",
-    "dunjun"
+    "dunjun",
+    "hand-gestures",
+    "gesture-recognition",
+    "webxr-hand-tracking",
+    "hand-pose",
+    "quest-3",
+    "punch-detection",
+    "swipe-gesture",
+    "asl",
+    "react-three-fiber"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sma1692/haath.git"
   },
-  "homepage": "https://github.com/sma1692/haath#readme",
+  "homepage": "https://haath.treefour.studio",
+  "bugs": {
+    "url": "https://github.com/sma1692/haath/issues"
+  },
   "author": "Tree Four Studio (S.M:A)",
   "license": "MIT",
   "devDependencies": {
@@ -60,6 +110,13 @@
     "@vitest/coverage-v8": "^4.0.15",
     "tsup": "^8.3.0",
     "typescript": "^5.5.0",
+    "vite": "^8.3.4",
     "vitest": "^4.0.15"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

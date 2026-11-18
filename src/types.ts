@@ -15,6 +15,7 @@ export type HandSign =
   | 'thehro'
   | 'niche'
   | 'gun'
+  | 'peace'
   | 'poke'
   | 'pinch'
   | 'thumb'
@@ -71,6 +72,18 @@ export interface CircleState {
   revolutions: number;
 }
 
+export type TwoFingerSwipeDirection = 'up' | 'down' | 'left' | 'right' | 'none';
+
+export interface SwipeState {
+  posed: boolean;               // Two-finger brush pose held (index + middle together, thumb tucked)
+  fired: boolean;               // True on the exact frame a swipe completes
+  direction: TwoFingerSwipeDirection; // Last fired direction (up/down = world up, left/right = head right)
+  distance: number;             // Travel along the dominant axis for the last fired swipe (m)
+  velocity: number;             // Average speed of the last fired swipe (m/s)
+  deltaUp: number;              // Per-frame travel along world up while posed (m), for smooth scrolling
+  deltaRight: number;           // Per-frame travel along head right while posed (m)
+}
+
 export interface SingleHandState {
   tracked: boolean;
   sign: HandSign;
@@ -80,12 +93,25 @@ export interface SingleHandState {
   wristPosition: Float32Array;  // [x, y, z]
   palmPosition: Float32Array;   // [x, y, z] at index-finger-phalanx-proximal
   palmQuaternion: Float32Array; // [x, y, z, w] at index-finger-phalanx-proximal
-  velocity: Float32Array;       // [vx, vy, vz] frame displacement vector
+  velocity: Float32Array;       // [vx, vy, vz] velocity vector (m/s)
   aimOrigin: Float32Array;      // [x, y, z] at index-finger-tip
   aimDirection: Float32Array;   // [dx, dy, dz] normalized (index-inter -> index-tip)
   palmForward: Float32Array;    // [fx, fy, fz] normalized (middle-inter -> middle-distal)
+  palmCenter: Float32Array;     // [x, y, z] true palm center: midpoint(middle-finger-metacarpal, middle-finger-phalanx-proximal), wrist fallback
+  prevPalmCenter: Float32Array; // [x, y, z] palmCenter from the previous tracked frame (swept collision)
+  hasPrevPalm: boolean;         // True when prevPalmCenter holds a valid previous tracked frame
+  indexTipPosition: Float32Array; // [x, y, z] raw index-finger-tip (aimOrigin may be re-anchored to the target ray / pinch)
   circle: CircleState;
+  swipe: SwipeState;
 }
+
+// Hand-to-environment contact modes for testHandSphereCollision
+// 'touch' / 'consumable': any tracked hand pose counts (idle, open, fist...)
+// 'combat': requires a non-idle gesture, optional requiredGesture match and cooldown
+export type HandContactMode = 'touch' | 'consumable' | 'combat';
+
+// Which part of the hand volume registered the contact ('none' on miss)
+export type HandContactPart = 'none' | 'palm' | 'wrist' | 'indexTip' | 'sweep';
 
 export interface ClapState {
   state: 'separated' | 'contact';
@@ -125,6 +151,7 @@ export interface HaathFrameState {
 }
 
 export interface HaathConfig {
+  minBoneLength?: number;
   useCurlDetection?: boolean;
   curlDot?: number;
   thumbOpenDist?: number;
@@ -133,6 +160,8 @@ export interface HaathConfig {
   pinchDist?: number;
   punchSpeed?: number;
   slapSpeed?: number;
+  /** Grace window (ms) a fist / open hand keeps its punch / slap after the last fast frame. */
+  strikeLatchMs?: number;
   triangleTipDist?: number;
   triangleThumbDist?: number;
   triangleFingerDot?: number;
@@ -141,6 +170,8 @@ export interface HaathConfig {
   clapSeparationDist?: number;
   clapDoubleMinMs?: number;
   clapDoubleMaxMs?: number;
+  clapPalmOpposeDot?: number;
+  clapFacingToleranceFrames?: number;
   circleHistoryFrames?: number;
   circleMinSamples?: number;
   circleMinRadius?: number;
@@ -152,10 +183,20 @@ export interface HaathConfig {
   blastChargeDurationMs?: number;
   blastThrustSpeed?: number;
   blastCooldownMs?: number;
+  swipeEnabled?: boolean;
+  swipeTipGap?: number;
+  swipeMinDist?: number;
+  swipeWindowMs?: number;
+  swipeAxisDominance?: number;
+  swipeMaxFingerDot?: number;
+  swipeCooldownMs?: number;
+  swipeRequireThumbTucked?: boolean;
 }
 
 export interface HoldConfig {
   stabilityFrames?: number;
+  /** Time based stability (ms). When > 0 it replaces stabilityFrames, so 72 / 90 / 120 Hz behave the same. */
+  stabilityMs?: number;
   holdDurationMs?: number;
   cooldownMs?: number;
 }

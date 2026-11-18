@@ -13,7 +13,9 @@ import {
   CLAP_CONTACT_DIST,
   CLAP_DOUBLE_MAX_MS,
   CLAP_DOUBLE_MIN_MS,
+  CLAP_FACING_TOLERANCE_FRAMES,
   CLAP_ORIGIN_MIN_DIST,
+  CLAP_PALM_OPPOSE_DOT,
   CLAP_SEPARATION_DIST,
   FLOATS_PER_JOINT,
   JOINT_INDEX,
@@ -29,8 +31,21 @@ const _dL = new Float32Array(3);
 const _dR = new Float32Array(3);
 const _apex = new Float32Array(3);
 const _base = new Float32Array(3);
-const _u = new Float32Array(3);
-const _w = new Float32Array(3);
+const _v1 = new Float32Array(3);
+const _v2 = new Float32Array(3);
+
+// Clap palm-facing scratch (palm normals, palm-center delta, proximal-joint edges)
+const _nL = new Float32Array(3);
+const _nR = new Float32Array(3);
+const _palmEdgeA = new Float32Array(3);
+const _palmEdgeB = new Float32Array(3);
+const _centerDelta = new Float32Array(3);
+
+// Palm normal sign per hand. Raw cross(thumbProx->pinkyProx, thumbProx->middleProx) is outward
+// for the LEFT palm (palm-down, fingers forward gives -Y) but points out of the dorsal side for
+// the RIGHT palm (palm-down gives +Y), so the right hand is negated. Mirrored joint layout.
+const PALM_NORMAL_SIGN_LEFT = 1;
+const PALM_NORMAL_SIGN_RIGHT = -1;
 
 export function createTwoHandState(): TwoHandState {
   return {
@@ -136,19 +151,35 @@ export function evaluateTriangleFromPoses(
   out.centroid[1] = 0.5 * (_apex[1] + _base[1]);
   out.centroid[2] = 0.5 * (_apex[2] + _base[2]);
 
-  // Up vector u = a - b
-  _u[0] = _apex[0] - _base[0];
-  _u[1] = _apex[1] - _base[1];
-  _u[2] = _apex[2] - _base[2];
+  // Definite 3-point plane:
+  // P1 = Left Index Tip (lIx, lIy, lIz)
+  // P2 = Right Index Tip (rIx, rIy, rIz)
+  // P3 = Left Thumb Tip (lTx, lTy, lTz)
+  // v1 = P2 - P1 (across along top edge)
+  _v1[0] = rIx - lIx;
+  _v1[1] = rIy - lIy;
+  _v1[2] = rIz - lIz;
 
-  // Across vector w = 0.5*(R_index + R_thumb) - 0.5*(L_index + L_thumb)
-  _w[0] = 0.5 * (rIx + rTx) - 0.5 * (lIx + lTx);
-  _w[1] = 0.5 * (rIy + rTy) - 0.5 * (lIy + lTy);
-  _w[2] = 0.5 * (rIz + rTz) - 0.5 * (lIz + lTz);
+  // v2 = P3 - P1 (down left edge)
+  _v2[0] = lTx - lIx;
+  _v2[1] = lTy - lIy;
+  _v2[2] = lTz - lIz;
 
-  // Normal n = normalize(u x w), negated if nz > 0 so n always aims into -Z
-  v3Cross(out.normal, _u, _w);
-  v3Normalize(out.normal, out.normal);
+  // Normal n = normalize(v1 x v2)
+  v3Cross(out.normal, _v1, _v2);
+  const nLen = Math.sqrt(out.normal[0]*out.normal[0] + out.normal[1]*out.normal[1] + out.normal[2]*out.normal[2]);
+  if (nLen > 1e-4) {
+    out.normal[0] /= nLen;
+    out.normal[1] /= nLen;
+    out.normal[2] /= nLen;
+  } else {
+    // Collinear/degenerated fallback pointing forward into dungeon (-Z)
+    out.normal[0] = 0;
+    out.normal[1] = 0;
+    out.normal[2] = -1;
+  }
+
+  // Enforce orientation pointing in the opposite direction of enemy travel towards player (forward in -Z)
   if (out.normal[2] > 0) {
     out.normal[0] = -out.normal[0];
     out.normal[1] = -out.normal[1];
@@ -164,38 +195,87 @@ export function evaluateTriangleFromPoses(
  * Active when both hands are open and palms face forward within palmDistThreshold.
  * Fires triggered pulse on ballistic forward thrust or full charge.
  */
+function _extractPalm(hand: any): [number, number, number] {
+  const p = hand.palmCenter ?? hand.palmPosition;
+  if (!p) return [0, 0, 0];
+  if (Array.isArray(p) || p instanceof Float32Array) return [p[0], p[1], p[2]];
+  return [p.x ?? 0, p.y ?? 0, p.z ?? 0];
+}
+
+function _extractForward(hand: any): [number, number, number] {
+  const f = hand.palmForward;
+  if (!f) return [0, 0, -1];
+  if (Array.isArray(f) || f instanceof Float32Array) return [f[0], f[1], f[2]];
+  return [f.x ?? 0, f.y ?? 0, f.z ?? -1];
+}
+
 export function evaluateBlastFromPoses(
-  left: SingleHandState,
-  right: SingleHandState,
-  deltaSeconds: number,
-  nowMs: number,
-  out: BlastState,
-  lastFireMsRef: { lastFireMs: number },
-  palmDistThreshold: number = BLAST_PALM_DIST,
-  forwardDotThreshold: number = BLAST_FORWARD_DOT,
-  chargeDurationMs: number = BLAST_CHARGE_DURATION_MS,
-  thrustSpeedThreshold: number = BLAST_THRUST_SPEED,
-  cooldownMs: number = BLAST_COOLDOWN_MS,
+  ...args: any[]
 ): BlastState {
+  let left: SingleHandState;
+  let right: SingleHandState;
+  let deltaSeconds: number;
+  let nowMs: number;
+  let out: BlastState;
+  let lastFireMsRef: { lastFireMs: number };
+  let palmDistThreshold: number = BLAST_PALM_DIST;
+  let forwardDotThreshold: number = BLAST_FORWARD_DOT;
+  let chargeDurationMs: number = BLAST_CHARGE_DURATION_MS;
+  let thrustSpeedThreshold: number = BLAST_THRUST_SPEED;
+  let cooldownMs: number = BLAST_COOLDOWN_MS;
+
+  if (args.length >= 7 && (args[0] instanceof Float32Array || typeof args[1] === 'number')) {
+    // Pose buffer overload: (leftBuf, leftOffset, rightBuf, rightOffset, left, right, out, deltaSeconds, nowMs, ...)
+    left = args[4];
+    right = args[5];
+    out = args[6];
+    deltaSeconds = args[7] ?? 0.016;
+    nowMs = args[8] ?? 0;
+    lastFireMsRef = args[9] ?? { lastFireMs: -Infinity };
+    if (args[10] !== undefined) palmDistThreshold = args[10];
+    if (args[11] !== undefined) forwardDotThreshold = args[11];
+    if (args[12] !== undefined) chargeDurationMs = args[12];
+    if (args[13] !== undefined) thrustSpeedThreshold = args[13];
+    if (args[14] !== undefined) cooldownMs = args[14];
+  } else {
+    // Direct state overload: (left, right, deltaSeconds, nowMs, out, lastFireMsRef, ...)
+    left = args[0];
+    right = args[1];
+    deltaSeconds = args[2] ?? 0.016;
+    nowMs = args[3] ?? 0;
+    out = args[4];
+    lastFireMsRef = args[5] ?? { lastFireMs: -Infinity };
+    if (args[6] !== undefined) palmDistThreshold = args[6];
+    if (args[7] !== undefined) forwardDotThreshold = args[7];
+    if (args[8] !== undefined) chargeDurationMs = args[8];
+    if (args[9] !== undefined) thrustSpeedThreshold = args[9];
+    if (args[10] !== undefined) cooldownMs = args[10];
+  }
+
   out.triggered = false;
 
-  if (!left.tracked || !right.tracked) {
+  if (!left || !right || !left.tracked || !right.tracked) {
     out.active = false;
     out.charge = 0;
     return out;
   }
 
   // Both hands must be open or thehro or have >= 4 fingers extended
-  const leftOpen = left.sign === 'open' || left.sign === 'thehro' || left.fingers.count >= 4;
-  const rightOpen = right.sign === 'open' || right.sign === 'thehro' || right.fingers.count >= 4;
+  const leftOpen = left.sign === 'open' || left.sign === 'thehro' || (left.fingers && left.fingers.count >= 4);
+  const rightOpen = right.sign === 'open' || right.sign === 'thehro' || (right.fingers && right.fingers.count >= 4);
   if (!leftOpen || !rightOpen) {
     out.active = false;
     out.charge = 0;
     return out;
   }
 
+  const leftPalm = _extractPalm(left);
+  const rightPalm = _extractPalm(right);
+  const leftForward = _extractForward(left);
+  const rightForward = _extractForward(right);
+
   // Distance between palms
-  const palmDist = v3Dist(left.palmPosition, right.palmPosition);
+  const palmDist = Math.hypot(leftPalm[0] - rightPalm[0], leftPalm[1] - rightPalm[1], leftPalm[2] - rightPalm[2]);
   if (palmDist > palmDistThreshold) {
     out.active = false;
     out.charge = 0;
@@ -203,7 +283,7 @@ export function evaluateBlastFromPoses(
   }
 
   // Both palms must face forward (into -Z)
-  if (left.palmForward[2] > forwardDotThreshold || right.palmForward[2] > forwardDotThreshold) {
+  if (leftForward[2] > forwardDotThreshold || rightForward[2] > forwardDotThreshold) {
     out.active = false;
     out.charge = 0;
     return out;
@@ -212,14 +292,14 @@ export function evaluateBlastFromPoses(
   out.active = true;
 
   // Origin: midpoint between palm positions
-  out.origin[0] = 0.5 * (left.palmPosition[0] + right.palmPosition[0]);
-  out.origin[1] = 0.5 * (left.palmPosition[1] + right.palmPosition[1]);
-  out.origin[2] = 0.5 * (left.palmPosition[2] + right.palmPosition[2]);
+  out.origin[0] = 0.5 * (leftPalm[0] + rightPalm[0]);
+  out.origin[1] = 0.5 * (leftPalm[1] + rightPalm[1]);
+  out.origin[2] = 0.5 * (leftPalm[2] + rightPalm[2]);
 
   // Direction: normalized average of palmForward vectors
-  out.direction[0] = 0.5 * (left.palmForward[0] + right.palmForward[0]);
-  out.direction[1] = 0.5 * (left.palmForward[1] + right.palmForward[1]);
-  out.direction[2] = 0.5 * (left.palmForward[2] + right.palmForward[2]);
+  out.direction[0] = 0.5 * (leftForward[0] + rightForward[0]);
+  out.direction[1] = 0.5 * (leftForward[1] + rightForward[1]);
+  out.direction[2] = 0.5 * (leftForward[2] + rightForward[2]);
   v3Normalize(out.direction, out.direction);
   if (out.direction[2] > 0) {
     out.direction[0] = -out.direction[0];
@@ -235,22 +315,50 @@ export function evaluateBlastFromPoses(
   }
 
   // Check forward thrust velocity or full charge trigger
-  const avgSpeed = 0.5 * (left.motionSpeed + right.motionSpeed);
+  const lSpeed = (left as any).motionSpeed ?? ((left as any).wristSpeed ?? 0);
+  const rSpeed = (right as any).motionSpeed ?? ((right as any).wristSpeed ?? 0);
+  const avgSpeed = 0.5 * (lSpeed + rSpeed);
+  const lVelZ = left.velocity ? (Array.isArray(left.velocity) || left.velocity instanceof Float32Array ? left.velocity[2] : (left.velocity as any).z ?? 0) : 0;
+  const rVelZ = right.velocity ? (Array.isArray(right.velocity) || right.velocity instanceof Float32Array ? right.velocity[2] : (right.velocity as any).z ?? 0) : 0;
   const thrustingForward =
-    avgSpeed >= thrustSpeedThreshold && (left.velocity[2] < 0 || right.velocity[2] < 0);
+    avgSpeed >= thrustSpeedThreshold && (lVelZ < 0 || rVelZ < 0);
   const canFire = nowMs - lastFireMsRef.lastFireMs > cooldownMs;
 
   if (canFire && (thrustingForward || out.charge >= 1.0)) {
     out.triggered = true;
     lastFireMsRef.lastFireMs = nowMs;
-    out.charge = 0;
   }
 
   return out;
 }
 
+/**
+ * Palm normal from the proximal joints (thumb, middle, pinky), oriented out of the palm.
+ * Writes normalize(sign * cross(thumbProx->pinkyProx, thumbProx->middleProx)) into out.
+ * Returns false on degenerate geometry (collinear joints), leaving out unspecified.
+ */
+function palmNormalFromJoints(buf: Float32Array, offset: number, sign: number, out: Float32Array): boolean {
+  const thumbOff = offset + JOINT_INDEX.THUMB_PROXIMAL * FLOATS_PER_JOINT;
+  const middleOff = offset + JOINT_INDEX.MIDDLE_PROXIMAL * FLOATS_PER_JOINT;
+  const pinkyOff = offset + JOINT_INDEX.PINKY_PROXIMAL * FLOATS_PER_JOINT;
+
+  v3Sub(_palmEdgeA, buf, buf, pinkyOff, thumbOff); // thumbProx -> pinkyProx
+  v3Sub(_palmEdgeB, buf, buf, middleOff, thumbOff); // thumbProx -> middleProx
+  v3Cross(out, _palmEdgeA, _palmEdgeB);
+
+  const len = v3Len(out);
+  if (len < 1e-6) return false;
+  const inv = sign / len;
+  out[0] *= inv;
+  out[1] *= inv;
+  out[2] *= inv;
+  return true;
+}
+
 export class TwoHandRecognizer {
   private _lastClapTimeMs = -Infinity;
+  private _frame = 0;
+  private _lastPalmFacingFrame = -Infinity;
   private readonly _blastFireRef = { lastFireMs: -Infinity };
   public readonly state: TwoHandState = createTwoHandState();
 
@@ -270,6 +378,8 @@ export class TwoHandRecognizer {
     const clapContactDist = config.clapContactDist ?? CLAP_CONTACT_DIST;
     const clapDoubleMinMs = config.clapDoubleMinMs ?? CLAP_DOUBLE_MIN_MS;
     const clapDoubleMaxMs = config.clapDoubleMaxMs ?? CLAP_DOUBLE_MAX_MS;
+    const clapPalmOpposeDot = config.clapPalmOpposeDot ?? CLAP_PALM_OPPOSE_DOT;
+    const clapFacingToleranceFrames = config.clapFacingToleranceFrames ?? CLAP_FACING_TOLERANCE_FRAMES;
     const triangleTipDist = config.triangleTipDist ?? TRIANGLE_TIP_DIST;
     const triangleThumbDist = config.triangleThumbDist ?? TRIANGLE_THUMB_DIST;
     const triangleFingerDot = config.triangleFingerDot ?? TRIANGLE_FINGER_DOT;
@@ -308,6 +418,24 @@ export class TwoHandRecognizer {
     const validOrigin =
       leftOriginDist >= clapOriginMinDist && rightOriginDist >= clapOriginMinDist;
 
+    // 3a. Palm-facing gate (evaluated every tracked frame so the contact frame can use a short look-back)
+    //     - palm normals opposed: dot(nL, nR) < clapPalmOpposeDot
+    //     - each palm faces the other hand: dot(nL, cR - cL) > 0 and dot(nR, cL - cR) > 0
+    //     Missing joint buffers fail closed (no clap).
+    this._frame++;
+    let palmFacing = false;
+    if (leftBuf && leftOffset >= 0 && rightBuf && rightOffset >= 0
+      && palmNormalFromJoints(leftBuf, leftOffset, PALM_NORMAL_SIGN_LEFT, _nL)
+      && palmNormalFromJoints(rightBuf, rightOffset, PALM_NORMAL_SIGN_RIGHT, _nR)) {
+      const opposed = v3Dot(_nL, _nR) < clapPalmOpposeDot;
+      v3Sub(_centerDelta, right.palmCenter, left.palmCenter); // cR - cL
+      const leftFaces = v3Dot(_nL, _centerDelta) > 0; // nL . (cR - cL) > 0
+      const rightFaces = v3Dot(_nR, _centerDelta) < 0; // nR . (cL - cR) > 0 (negated delta)
+      palmFacing = opposed && leftFaces && rightFaces;
+    }
+    if (palmFacing) this._lastPalmFacingFrame = this._frame;
+    const palmFacingRecent = this._frame - this._lastPalmFacingFrame <= clapFacingToleranceFrames;
+
     if (validOrigin) {
       if (this.state.clap.state === 'contact') {
         if (wristDist >= clapSeparationDist) {
@@ -315,7 +443,7 @@ export class TwoHandRecognizer {
         }
       } else {
         const dualFist = left.sign === 'fist' && right.sign === 'fist';
-        if (wristDist <= clapContactDist && !dualFist) {
+        if (wristDist <= clapContactDist && !dualFist && palmFacingRecent) {
           this.state.clap.state = 'contact';
           this.state.clap.singleClap = true;
 
@@ -370,6 +498,8 @@ export class TwoHandRecognizer {
 
   reset(): void {
     this._lastClapTimeMs = -Infinity;
+    this._frame = 0;
+    this._lastPalmFacingFrame = -Infinity;
     this._blastFireRef.lastFireMs = -Infinity;
     this.state.fingerCount = 0;
     this.state.handsCrossed = false;

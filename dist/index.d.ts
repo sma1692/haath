@@ -1,199 +1,5 @@
-declare const XR_HAND_JOINTS: readonly ["wrist", "thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip", "index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip", "middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip", "ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip", "pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"];
-declare const JOINT_COUNT = 25;
-declare const FLOATS_PER_JOINT = 7;
-declare const POS_HISTORY_COUNT = 20;
-declare const JOINT_INDEX: {
-    readonly WRIST: 0;
-    readonly THUMB_METACARPAL: 1;
-    readonly THUMB_PROXIMAL: 2;
-    readonly THUMB_DISTAL: 3;
-    readonly THUMB_TIP: 4;
-    readonly INDEX_METACARPAL: 5;
-    readonly INDEX_PROXIMAL: 6;
-    readonly INDEX_INTERMEDIATE: 7;
-    readonly INDEX_DISTAL: 8;
-    readonly INDEX_TIP: 9;
-    readonly MIDDLE_METACARPAL: 10;
-    readonly MIDDLE_PROXIMAL: 11;
-    readonly MIDDLE_INTERMEDIATE: 12;
-    readonly MIDDLE_DISTAL: 13;
-    readonly MIDDLE_TIP: 14;
-    readonly RING_METACARPAL: 15;
-    readonly RING_PROXIMAL: 16;
-    readonly RING_INTERMEDIATE: 17;
-    readonly RING_DISTAL: 18;
-    readonly RING_TIP: 19;
-    readonly PINKY_METACARPAL: 20;
-    readonly PINKY_PROXIMAL: 21;
-    readonly PINKY_INTERMEDIATE: 22;
-    readonly PINKY_DISTAL: 23;
-    readonly PINKY_TIP: 24;
-};
-declare const CURL_DOT = 0.6;
-declare const THUMBOPEN = 0.07;
-declare const FINGEROPEN = 0.1;
-declare const DIRECTION_THRESHOLD = 0.72;
-declare const PINCH_DIST = 0.03;
-declare const PUNCH_SPEED = 1.3;
-declare const SLAP_SPEED = 1.8;
-declare const PALM_COLLIDER_RADIUS = 0.05;
-declare const TRIANGLE_TIP_DIST = 0.12;
-declare const TRIANGLE_THUMB_DIST = 0.14;
-declare const TRIANGLE_FINGER_DOT = 0.35;
-declare const CLAP_ORIGIN_MIN_DIST = 0.05;
-declare const CLAP_CONTACT_DIST = 0.17;
-declare const CLAP_SEPARATION_DIST = 0.195;
-declare const CLAP_DOUBLE_MIN_MS = 90;
-declare const CLAP_DOUBLE_MAX_MS = 1100;
-declare const CIRCLE_HISTORY_FRAMES = 90;
-declare const CIRCLE_MIN_SAMPLES = 30;
-declare const CIRCLE_MIN_RADIUS = 0.06;
-declare const CIRCLE_MAX_IRREGULARITY = 0.55;
-declare const CIRCLE_MIN_REVOLUTIONS = 1.2;
-declare const DISC_FIRE_COOLDOWN_MS = 800;
-declare const HOLD_SIGN_STABILITY_FRAMES = 10;
-declare const HOLD_COUNT_STABILITY_FRAMES = 6;
-declare const HOLD_DEFAULT_DURATION_MS = 1000;
-declare const HOLD_COOLDOWN_MS = 800;
-declare const COLLISION_DURATION = 200;
-declare const SPELL_CONFIG: {
-    readonly HISTORY_FRAMES: 90;
-    readonly MIN_SAMPLES: 30;
-    readonly MIN_RADIUS: 0.06;
-    readonly MAX_RADIUS: 0.45;
-    readonly MAX_IRREGULARITY: 0.55;
-    readonly MAX_PLANE_VARIANCE: 0.015;
-    readonly CIRCLE_MIN_REVOLUTIONS: 1.2;
-    readonly DISC_FIRE_COOLDOWN_MS: 800;
-};
-declare const PHALANGES: {
-    readonly thumb: readonly ["thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip"];
-    readonly index: readonly ["index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip"];
-    readonly middle: readonly ["middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip"];
-    readonly ring: readonly ["ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip"];
-    readonly pinky: readonly ["pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"];
-};
-
-type Handedness = 'left' | 'right';
-type HandSide = Handedness;
-type JointName = (typeof XR_HAND_JOINTS)[number];
-type HandSign = 'idle' | 'unknown' | 'open' | 'fist' | 'thehro' | 'niche' | 'gun' | 'poke' | 'pinch' | 'thumb' | 'thumbsup' | 'thumbsdown' | 'telephone' | 'rock-horns' | 'birdie-1' | 'birdie-2' | 'pinkie-out';
-type ActiveGesture = HandSign | 'punch' | 'slap';
-type StrikeType = 'punch' | 'slap' | 'poke' | 'none';
-interface Vec3 {
-    x: number;
-    y: number;
-    z: number;
-}
-interface Quat {
-    x: number;
-    y: number;
-    z: number;
-    w: number;
-}
-interface JointPoseData {
-    position: Vec3;
-    orientation?: Quat;
-}
-type HandPoseInput = Float32Array | Partial<Record<JointName, JointPoseData | Vec3>> | null | undefined;
-interface FingerExtensionState {
-    thumb: boolean;
-    index: boolean;
-    middle: boolean;
-    ring: boolean;
-    pinky: boolean;
-    count: number;
-}
-interface CircleState {
-    triggered: boolean;
-    centroid: Float32Array;
-    normal: Float32Array;
-    meanRadius: number;
-    revolutions: number;
-}
-interface SingleHandState {
-    tracked: boolean;
-    sign: HandSign;
-    gesture: ActiveGesture;
-    fingers: FingerExtensionState;
-    motionSpeed: number;
-    wristPosition: Float32Array;
-    palmPosition: Float32Array;
-    palmQuaternion: Float32Array;
-    velocity: Float32Array;
-    aimOrigin: Float32Array;
-    aimDirection: Float32Array;
-    palmForward: Float32Array;
-    circle: CircleState;
-}
-interface ClapState {
-    state: 'separated' | 'contact';
-    singleClap: boolean;
-    doubleClap: boolean;
-}
-interface TriangleState {
-    active: boolean;
-    centroid: Float32Array;
-    normal: Float32Array;
-}
-interface TwoHandState {
-    fingerCount: number;
-    handsCrossed: boolean;
-    wristDistance: number;
-    clap: ClapState;
-    triangle: TriangleState;
-}
-interface HaathFrameState {
-    left: SingleHandState;
-    right: SingleHandState;
-    twoHand: TwoHandState;
-}
-interface HaathConfig {
-    useCurlDetection?: boolean;
-    curlDot?: number;
-    thumbOpenDist?: number;
-    fingerOpenDist?: number;
-    directionThreshold?: number;
-    pinchDist?: number;
-    punchSpeed?: number;
-    slapSpeed?: number;
-    triangleTipDist?: number;
-    triangleThumbDist?: number;
-    triangleFingerDot?: number;
-    clapOriginMinDist?: number;
-    clapContactDist?: number;
-    clapSeparationDist?: number;
-    clapDoubleMinMs?: number;
-    clapDoubleMaxMs?: number;
-    circleHistoryFrames?: number;
-    circleMinSamples?: number;
-    circleMinRadius?: number;
-    circleMaxIrregularity?: number;
-    circleMinRevolutions?: number;
-    discFireCooldownMs?: number;
-}
-interface HoldConfig {
-    stabilityFrames?: number;
-    holdDurationMs?: number;
-    cooldownMs?: number;
-}
-interface HoldState<T = string | number> {
-    active: boolean;
-    candidate: T | null;
-    progress: number;
-    triggered: boolean;
-}
-type HandState = SingleHandState;
-type HaathUpdateResult = HaathFrameState;
-type CircleResult = CircleState;
-type TriangleResult = TriangleState;
-type CurlState = FingerExtensionState;
-interface StrikeResult {
-    type: StrikeType;
-    velocity: Vec3;
-    speed: number;
-    momentum: Vec3;
-}
+import { V as Vec3, a as HandContactMode, S as SingleHandState, b as HandContactPart, c as HoldState, d as HoldConfig, e as Handedness, f as HaathConfig, F as FingerExtensionState, g as HandSign, A as ActiveGesture, C as CircleState, h as SwipeState, T as TwoHandState, B as BlastState, i as TriangleState, H as HaathFrameState, j as HandPoseInput } from './types-TNkY3J3h.js';
+export { k as BLAST_CHARGE_DURATION_MS, l as BLAST_CONFIG, m as BLAST_COOLDOWN_MS, n as BLAST_FORWARD_DOT, o as BLAST_PALM_DIST, p as BLAST_THRUST_SPEED, q as BlastResult, r as CIRCLE_HISTORY_FRAMES, s as CIRCLE_MAX_IRREGULARITY, t as CIRCLE_MIN_RADIUS, u as CIRCLE_MIN_REVOLUTIONS, v as CIRCLE_MIN_SAMPLES, w as CLAP_CONTACT_DIST, x as CLAP_DOUBLE_MAX_MS, y as CLAP_DOUBLE_MIN_MS, z as CLAP_ORIGIN_MIN_DIST, D as CLAP_SEPARATION_DIST, E as COLLISION_DURATION, G as CURL_DOT, I as CircleResult, J as ClapState, K as CurlState, L as DIRECTION_THRESHOLD, M as DISC_FIRE_COOLDOWN_MS, N as FINGEROPEN, O as FINGERTIP_COLLIDER_RADIUS, P as FLOATS_PER_JOINT, Q as GUN_INDEX_LEAD_RATIO, R as GUN_TUCK_ENTER_MAX_RATIO, U as HAND_CONTACT_MODES, W as HOLD_COOLDOWN_MS, X as HOLD_COUNT_DURATION_MS, Y as HOLD_COUNT_STABILITY_FRAMES, Z as HOLD_DEFAULT_DURATION_MS, _ as HOLD_NAV_DURATION_MS, $ as HOLD_PAUSE_DURATION_MS, a0 as HOLD_SIGN_STABILITY_FRAMES, a1 as HOLD_SIGN_STABILITY_MS, a2 as HaathUpdateResult, a3 as HandSide, a4 as HandState, a5 as JOINT_COUNT, a6 as JOINT_INDEX, a7 as JointName, a8 as JointPoseData, a9 as MIN_ANATOMICAL_BONE_LENGTH, aa as PALM_COLLIDER_RADIUS, ab as PEACE_ENTER_MIN_SPREAD_DEG, ac as PHALANGES, ad as PINCH_DIST, ae as POS_HISTORY_COUNT, af as PUNCH_SPEED, ag as Quat, ah as SIGN_CURL_ENTER_MAX_RATIO, ai as SIGN_EXTEND_ENTER_MIN_RATIO, aj as SLAP_SPEED, ak as SPELL_CONFIG, al as STRIKE_LATCH_MS, am as SWIPE_AXIS_DOMINANCE, an as SWIPE_COOLDOWN_MS, ao as SWIPE_MAX_FINGER_DOT, ap as SWIPE_MIN_DIST, aq as SWIPE_POSE_GRACE_FRAMES, ar as SWIPE_SAMPLE_CAPACITY, as as SWIPE_TIP_GAP, at as SWIPE_WINDOW_MS, au as SpellArchetype, av as StrikeResult, aw as StrikeType, ax as THUMBOPEN, ay as THUMBS_ENTER_ALIGN_MIN_DOT, az as THUMBS_ENTER_DIRECTION_THRESHOLD, aA as THUMBS_ENTER_THUMB_OUT_RATIO, aB as TRIANGLE_FINGER_DOT, aC as TRIANGLE_THUMB_DIST, aD as TRIANGLE_TIP_DIST, aE as TriangleResult, aF as TwoFingerSwipeDirection, aG as WRIST_COLLIDER_RADIUS, aH as XR_HAND_JOINTS } from './types-TNkY3J3h.js';
 
 type Vec3Like = Vec3 | Float32Array | readonly number[];
 declare function dot(a: Vec3, b: Vec3): number;
@@ -263,13 +69,57 @@ declare class CollisionCooldownTracker {
 declare function sphereSphere(centerA: Vec3, radiusA: number, centerB: Vec3, radiusB: number): boolean;
 declare function cylinderSphere(origin: Vec3, dir: Vec3, length: number, radius: number, sphereCenter: Vec3, sphereRadius: number): boolean;
 declare function discSphere(discCenter: Vec3, discNormal: Vec3, discRadius: number, sphereCenter: Vec3, sphereRadius: number): boolean;
+/**
+ * Options for testHandSphereCollision. Callers in a render loop should pre-allocate one
+ * options object and mutate its fields per call instead of passing a fresh literal.
+ */
+interface HandSphereTestOptions {
+    /** 'touch' / 'consumable' (default 'touch'): any tracked pose. 'combat': non-idle gesture required. */
+    mode?: HandContactMode;
+    /** Host-resolved gesture override (emulator, game-specific promotion). Defaults to hand.gesture. */
+    gesture?: string;
+    /** Combat only: gesture (or list of gestures) the hand must be in to register. */
+    requiredGesture?: string | readonly string[];
+    /** Extra radius added to every hand sphere (meters). Default 0. */
+    radiusPadding?: number;
+    /** Palm sphere radius at palmCenter. Default PALM_COLLIDER_RADIUS (0.05). */
+    palmRadius?: number;
+    /** Wrist sphere radius at wristPosition. Default WRIST_COLLIDER_RADIUS (0.04). */
+    wristRadius?: number;
+    /** Index fingertip sphere radius at indexTipPosition. Default FINGERTIP_COLLIDER_RADIUS (0.025). */
+    fingertipRadius?: number;
+    /** Swept palm-vs-target test between previous and current frame. Default true. */
+    swept?: boolean;
+    /** Target world position on the previous frame. When omitted, the target is treated as static. */
+    prevTargetX?: number;
+    prevTargetY?: number;
+    prevTargetZ?: number;
+    /** Combat only: debounce repeated hits via CollisionCooldownTracker.tryTrigger. */
+    cooldown?: CollisionCooldownTracker;
+    /** Cooldown key: target id. Required for the cooldown to apply. */
+    targetId?: string | number;
+    /** Cooldown key: hand name. Defaults to the handedness passed by Haath.testHandSphere. */
+    handedness?: string;
+    /** Cooldown timestamp. Defaults to performance.now(). */
+    nowMs?: number;
+}
+/**
+ * Tests a target sphere against the full anatomical hand volume:
+ * palm center, wrist, and index fingertip spheres, plus an optional swept palm segment
+ * (relative motion of palm vs target between frames) so fast targets cannot tunnel.
+ *
+ * Returns the hand part that registered contact, or 'none'. Allocation-free.
+ */
+declare function testHandSphereCollision(hand: SingleHandState, targetX: number, targetY: number, targetZ: number, targetRadius: number, options?: HandSphereTestOptions, handedness?: string): HandContactPart;
 
 declare class HoldRecognizer<T = string | number> {
     private readonly _stabilityFrames;
+    private readonly _stabilityMs;
     private readonly _holdDurationMs;
     private readonly _cooldownMs;
     private _rawCandidate;
     private _stableFrames;
+    private _stableMs;
     private _lockedCandidate;
     private _elapsedMs;
     private _lastTriggerMs;
@@ -284,6 +134,31 @@ declare class HoldRecognizer<T = string | number> {
     reset(): void;
 }
 
+/**
+ * Thumbs up / down shape gate: all four fingers curled (tip near its own proximal joint) and the
+ * thumb outstretched along the fist, i.e. pinkyTip -> indexTip roughly parallel to
+ * thumbProximal -> thumbTip. A relaxed fist with the thumb lying across the fingers fails it.
+ * holding = the hand already shows thumb / thumbsup / thumbsdown (playtest 4 HOLD gates); otherwise
+ * the stricter ENTER gates apply (SIGN_CURL_ENTER_MAX_RATIO, THUMBS_ENTER_ALIGN_MIN_DOT).
+ */
+declare function isThumbsShape(poses: Float32Array, frameOffset?: number, holding?: boolean): boolean;
+/**
+ * Peace shape gate: ring and pinky curled, index and middle outstretched, and the two fingers
+ * spread in a V: angle(indexProximal -> indexTip, middleProximal -> middleTip) > PEACE_MIN_SPREAD_DEG.
+ * Fingers held together (two-finger gun / swipe pose) and a relaxed open hand both fail it.
+ * holding = the hand already shows peace (HOLD gates); otherwise the stricter ENTER gates apply.
+ */
+declare function isPeaceShape(poses: Float32Array, frameOffset?: number, holding?: boolean): boolean;
+/**
+ * 1-finger gun shape check: translated from 2-finger gun logic onto a single index finger.
+ * Index is extended, middle/ring/pinky are tucked within the gun tuck gate (accounting for tendon
+ * coupling pulling the middle finger partially open: the middle also counts as tucked when the index
+ * reaches GUN_INDEX_LEAD_RATIO further), and the thumb is out.
+ * Entering a gun needs the thumb flagged out (THUMB_OUT_RATIO); a held gun keeps it down to
+ * THUMB_OUT_RATIO * 0.85, so a thumb drifting in mid-aim does not drop to poke.
+ * (Merged from DunJun thumbPose.classifyThumbHand so there is one gun / peace / poke classifier.)
+ */
+declare function isOneFingerGunShape(poses: Float32Array, frameOffset: number, fingers: FingerExtensionState, holding?: boolean): boolean;
 declare function createSingleHandState(): SingleHandState;
 /**
  * Evaluates orientation-invariant intra-finger curl for a 4-joint chain:
@@ -297,6 +172,12 @@ declare function isFingerExtendedCurl(poses: Float32Array, frameOffset: number, 
  */
 declare function isThumbReallyOut(poses: Float32Array, frameOffset?: number): boolean;
 /**
+ * Verifies anatomical validity of tracked joints.
+ * Prevents collapsed WebXR tracking poses (< 0.03m bone lengths / knuckle spans)
+ * from spiking velocity and triggering punch / slap strikes.
+ */
+declare function isHandAnatomicallyValid(poses: Float32Array, frameOffset?: number, minBoneLength?: number): boolean;
+/**
  * Evaluates all 5 finger extensions into `out` using either orientation-invariant curl
  * (`useCurlDetection = true`) or legacy Euclidean wrist-to-tip distances (`useCurlDetection = false`).
  */
@@ -304,11 +185,15 @@ declare function evaluateFingerExtensions(poses: Float32Array, frameOffset: numb
 /**
  * Classifies static single-hand sign in exact DunJun priority order (1..11).
  */
-declare function classifyHandSign(poses: Float32Array, frameOffset: number, fingers: FingerExtensionState, pinchDist?: number, directionThreshold?: number): HandSign;
+declare function classifyHandSign(poses: Float32Array, frameOffset: number, fingers: FingerExtensionState, pinchDist?: number, directionThreshold?: number, prevSign?: HandSign): HandSign;
 /**
  * Promotes static hand sign to 'punch' or 'slap' when ballistic velocity gate is met.
  */
 declare function promoteStrikeGesture(sign: HandSign, motionSpeed: number, punchSpeed?: number, slapSpeed?: number): ActiveGesture;
+/** Signs that are a closed hand for strike purposes (punch, punch latch). */
+declare function isFistFamily(sign: HandSign): boolean;
+/** Signs that are an open hand for strike purposes (slap, slap latch). */
+declare function isOpenFamily(sign: HandSign): boolean;
 /**
  * Per-hand stateful tracker managing the 20-frame 25-joint pose ring buffer,
  * kinematics vectors, velocity gate, and Newell's 3D circle trajectory detector.
@@ -318,7 +203,11 @@ declare class SingleHandRecognizer {
     private readonly _historyBuffer;
     private _head;
     private _historyCount;
+    private _lastPunchMs;
+    private _lastSlapMs;
+    private _palmCenterValid;
     private readonly _circleRecognizer;
+    private readonly _swipeRecognizer;
     readonly state: SingleHandState;
     constructor(handedness: Handedness, config?: HaathConfig);
     /**
@@ -338,7 +227,15 @@ declare class SingleHandRecognizer {
      * Evaluates all single-hand kinematics, curl, sign, ballistic velocity, and circle trajectory
      * from the most recently written slot in `_historyBuffer`.
      */
-    evaluateCurrentFrame(deltaSeconds: number, nowMs: number, config: Required<HaathConfig>): SingleHandState;
+    evaluateCurrentFrame(deltaSeconds: number, nowMs: number, config: Required<HaathConfig>, headRight?: Float32Array): SingleHandState;
+    /**
+     * Clears the in-progress two-finger swipe stroke (does not reset the cooldown).
+     */
+    resetSwipe(): void;
+    /**
+     * Resets the Newell's 3D circle trajectory recognizer ring buffer and transient state.
+     */
+    resetCircle(): void;
     reset(): void;
 }
 
@@ -366,11 +263,60 @@ declare class CircleTrajectoryRecognizer {
     private readonly _v;
     constructor(config?: CircleDetectorConfig);
     reset(): void;
+    resetCircle(): void;
     /**
      * Appends wrist position (x, y, z) and evaluates Newell's 3D circle trajectory.
      * Mutates `out` in-place with zero heap allocations.
      */
     update(wristX: number, wristY: number, wristZ: number, nowMs: number, out: CircleState, _hand?: Handedness): CircleState;
+}
+
+interface TwoFingerSwipeConfig {
+    tipGap?: number;
+    minDist?: number;
+    windowMs?: number;
+    axisDominance?: number;
+    maxFingerDot?: number;
+    cooldownMs?: number;
+    poseGraceFrames?: number;
+    requireThumbTucked?: boolean;
+}
+declare function createSwipeState(): SwipeState;
+/**
+ * True when the hand holds the two-finger brush pose (index + middle together, ring + pinky curled,
+ * thumb tucked). Stateless and allocation free.
+ */
+declare function isTwoFingerBrushPose(poses: Float32Array, frameOffset: number, fingers: FingerExtensionState, tipGap?: number, requireThumbTucked?: boolean): boolean;
+/**
+ * Per-hand two-finger swipe tracker. Call update() once per tracked frame.
+ */
+declare class TwoFingerSwipeRecognizer {
+    private readonly _tipGap;
+    private readonly _minDist;
+    private readonly _windowMs;
+    private readonly _axisDominance;
+    private readonly _maxFingerDot;
+    private readonly _cooldownMs;
+    private readonly _graceFrames;
+    private readonly _requireThumbTucked;
+    private readonly _cap;
+    private readonly _samples;
+    private readonly _times;
+    private _head;
+    private _count;
+    private _lostFrames;
+    private _lastFireMs;
+    private _hasPrev;
+    private _prevX;
+    private _prevY;
+    private _prevZ;
+    constructor(config?: TwoFingerSwipeConfig);
+    /**
+     * @param headRight Horizontal head-right unit vector [x, y, z] (y should be ~0).
+     */
+    update(poses: Float32Array, frameOffset: number, fingers: FingerExtensionState, aimDirection: Float32Array, headRight: Float32Array, nowMs: number, out: SwipeState): SwipeState;
+    private _clearStroke;
+    reset(out?: SwipeState): void;
 }
 
 declare function createTwoHandState(): TwoHandState;
@@ -379,10 +325,14 @@ declare function createTwoHandState(): TwoHandState;
  * Ensures forward normal aims into -Z (nz <= 0).
  */
 declare function evaluateTriangleFromPoses(leftBuf: Float32Array, leftOffset: number, rightBuf: Float32Array, rightOffset: number, out: TriangleState, tipDistThreshold?: number, thumbDistThreshold?: number, fingerDotThreshold?: number): TriangleState;
+declare function evaluateBlastFromPoses(...args: any[]): BlastState;
 declare class TwoHandRecognizer {
     private _lastClapTimeMs;
+    private _frame;
+    private _lastPalmFacingFrame;
+    private readonly _blastFireRef;
     readonly state: TwoHandState;
-    update(left: SingleHandState, right: SingleHandState, leftBuf: Float32Array | null, leftOffset: number, rightBuf: Float32Array | null, rightOffset: number, nowMs: number, config?: HaathConfig): TwoHandState;
+    update(left: SingleHandState, right: SingleHandState, leftBuf: Float32Array | null, leftOffset: number, rightBuf: Float32Array | null, rightOffset: number, nowMs: number, config?: HaathConfig, deltaSeconds?: number): TwoHandState;
     reset(): void;
 }
 
@@ -392,6 +342,7 @@ declare class Haath {
     private readonly _right;
     private readonly _twoHand;
     private readonly _stagingSlot;
+    private readonly _headRight;
     readonly state: HaathFrameState;
     constructor(config?: HaathConfig);
     /**
@@ -404,8 +355,27 @@ declare class Haath {
      */
     updateFromPoses(leftInput: HandPoseInput, rightInput: HandPoseInput, deltaSeconds: number, nowMs?: number): HaathFrameState;
     reset(): void;
+    /**
+     * Sets the head-right vector used to resolve two-finger swipe left/right. Projected onto the
+     * horizontal plane and normalized; ignored if degenerate. update() calls this from the viewer
+     * pose automatically, updateFromPoses() consumers call it themselves (default world +X).
+     */
+    setHeadRight(x: number, _y: number, z: number): void;
+    /**
+     * Clears any in-progress two-finger swipe stroke (cooldowns are kept).
+     */
+    resetSwipe(hand?: Handedness | 'both'): void;
+    resetCircle(hand?: Handedness | 'both'): void;
+    get leftRecognizer(): SingleHandRecognizer;
+    get rightRecognizer(): SingleHandRecognizer;
+    get twoHandRecognizer(): TwoHandRecognizer;
+    /**
+     * Tests a target sphere against the current palm center, wrist, and index fingertip of one hand
+     * (plus swept palm motion). See testHandSphereCollision for modes and options. Allocation-free.
+     */
+    testHandSphere(handedness: Handedness, targetX: number, targetY: number, targetZ: number, targetRadius: number, options?: HandSphereTestOptions): HandContactPart;
     private _ingestXRHand;
     private _populateStagingFromInput;
 }
 
-export { type ActiveGesture, CIRCLE_HISTORY_FRAMES, CIRCLE_MAX_IRREGULARITY, CIRCLE_MIN_RADIUS, CIRCLE_MIN_REVOLUTIONS, CIRCLE_MIN_SAMPLES, CLAP_CONTACT_DIST, CLAP_DOUBLE_MAX_MS, CLAP_DOUBLE_MIN_MS, CLAP_ORIGIN_MIN_DIST, CLAP_SEPARATION_DIST, COLLISION_DURATION, CURL_DOT, type CircleResult, type CircleState, CircleTrajectoryRecognizer, type ClapState, CollisionCooldownTracker, type CurlState, DIRECTION_THRESHOLD, DISC_FIRE_COOLDOWN_MS, FINGEROPEN, FLOATS_PER_JOINT, type FingerExtensionState, HOLD_COOLDOWN_MS, HOLD_COUNT_STABILITY_FRAMES, HOLD_DEFAULT_DURATION_MS, HOLD_SIGN_STABILITY_FRAMES, Haath, type HaathConfig, type HaathFrameState, type HaathUpdateResult, type HandPoseInput, type HandSide, type HandSign, type HandState, type Handedness, type HoldConfig, HoldRecognizer, type HoldState, JOINT_COUNT, JOINT_INDEX, type JointName, type JointPoseData, PALM_COLLIDER_RADIUS, PHALANGES, PINCH_DIST, POS_HISTORY_COUNT, PUNCH_SPEED, type Quat, SLAP_SPEED, SPELL_CONFIG, SingleHandRecognizer, type SingleHandState, type StrikeResult, type StrikeType, THUMBOPEN, TRIANGLE_FINGER_DOT, TRIANGLE_THUMB_DIST, TRIANGLE_TIP_DIST, type TriangleResult, type TriangleState, TwoHandRecognizer, type TwoHandState, type Vec3, XR_HAND_JOINTS, add, classifyHandSign, createSingleHandState, createTwoHandState, cross, cylinderSphere, discSphere, dist, distSq, dot, evaluateFingerExtensions, evaluateTriangleFromPoses, hypot, intersectDiscSphere, intersectLaserSphere, intersectSphereSphere, isFingerExtendedCurl, isThumbReallyOut, normalize, promoteStrikeGesture, scale, sphereSphere, sub, v3Add, v3Copy, v3Cross, v3Dist, v3DistSq, v3Dot, v3Len, v3LenSq, v3Normalize, v3Scale, v3Set, v3Sub };
+export { ActiveGesture, BlastState, CircleState, CircleTrajectoryRecognizer, CollisionCooldownTracker, FingerExtensionState, Haath, HaathConfig, HaathFrameState, HandContactMode, HandContactPart, HandPoseInput, HandSign, type HandSphereTestOptions, Handedness, HoldConfig, HoldRecognizer, HoldState, SingleHandRecognizer, SingleHandState, SwipeState, TriangleState, type TwoFingerSwipeConfig, TwoFingerSwipeRecognizer, TwoHandRecognizer, TwoHandState, Vec3, add, classifyHandSign, createSingleHandState, createSwipeState, createTwoHandState, cross, cylinderSphere, discSphere, dist, distSq, dot, evaluateBlastFromPoses, evaluateFingerExtensions, evaluateTriangleFromPoses, hypot, intersectDiscSphere, intersectLaserSphere, intersectSphereSphere, isFingerExtendedCurl, isFistFamily, isHandAnatomicallyValid, isOneFingerGunShape, isOpenFamily, isPeaceShape, isThumbReallyOut, isThumbsShape, isTwoFingerBrushPose, normalize, promoteStrikeGesture, scale, sphereSphere, sub, testHandSphereCollision, v3Add, v3Copy, v3Cross, v3Dist, v3DistSq, v3Dot, v3Len, v3LenSq, v3Normalize, v3Scale, v3Set, v3Sub };

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>haath example 04: PC hand emulator</title>
+  <link rel="stylesheet" href="../shared/example.css">
+  <style>body { overflow: hidden; } canvas { border: 0; border-radius: 0; }</style>
+  <script type="importmap">
+    {
+      "imports": {
+        "@treefour/haath": "../../dist/index.js",
+        "@treefour/haath/emulator": "../../dist/emulator.js",
+        "three": "https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.0/examples/jsm/",
+        "iwer": "https://cdn.jsdelivr.net/npm/iwer@2.6.0/build/iwer.module.js",
+        "@iwer/devui": "https://cdn.jsdelivr.net/npm/@iwer/devui@2.5.0/build/iwer-devui.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h1>04 · PC hand emulator</h1>
+    <p>No headset. IWER emulates a Quest 3 with hands. Click <b>Enter VR</b>, then use the haath panels or keys:
+      <code>WASD</code> / arrows move a hand (hold to speed up), hold <code>1-4</code> / <code>U I O P</code> for punch, slap, poke, gun,
+      <code>Q E R T</code> / <code>J K L ;</code> for signs. Move a hand down onto the orbs with a poke, or sweep a fist through them fast.</p>
+    <p id="status">Waiting for an XR session.</p>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

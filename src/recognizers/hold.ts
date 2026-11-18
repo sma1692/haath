@@ -10,11 +10,13 @@ import type { HoldConfig, HoldState } from '../types.js';
 
 export class HoldRecognizer<T = string | number> {
   private readonly _stabilityFrames: number;
+  private readonly _stabilityMs: number;
   private readonly _holdDurationMs: number;
   private readonly _cooldownMs: number;
 
   private _rawCandidate: T | null = null;
   private _stableFrames = 0;
+  private _stableMs = 0;
   private _lockedCandidate: T | null = null;
   private _elapsedMs = 0;
   private _lastTriggerMs = -Infinity;
@@ -28,6 +30,7 @@ export class HoldRecognizer<T = string | number> {
 
   constructor(config: HoldConfig = {}) {
     this._stabilityFrames = config.stabilityFrames ?? HOLD_SIGN_STABILITY_FRAMES;
+    this._stabilityMs = config.stabilityMs ?? 0;
     this._holdDurationMs = config.holdDurationMs ?? HOLD_DEFAULT_DURATION_MS;
     this._cooldownMs = config.cooldownMs ?? HOLD_COOLDOWN_MS;
   }
@@ -68,6 +71,7 @@ export class HoldRecognizer<T = string | number> {
     if (this._isIdleCandidate(candidate)) {
       this._rawCandidate = null;
       this._stableFrames = 0;
+      this._stableMs = 0;
       this._lockedCandidate = null;
       this._elapsedMs = 0;
       this.state.active = false;
@@ -78,16 +82,22 @@ export class HoldRecognizer<T = string | number> {
 
     if (candidate === this._rawCandidate) {
       this._stableFrames++;
+      this._stableMs += dtMs;
     } else {
       this._rawCandidate = candidate;
       this._stableFrames = 1;
+      this._stableMs = dtMs;
       if (this._lockedCandidate !== candidate) {
         this._lockedCandidate = null;
         this._elapsedMs = 0;
       }
     }
 
-    if (this._stableFrames < this._stabilityFrames) {
+    // if (this._stableFrames < this._stabilityFrames) {
+    const unstable = this._stabilityMs > 0
+      ? this._stableMs < this._stabilityMs
+      : this._stableFrames < this._stabilityFrames;
+    if (unstable) {
       this.state.active = false;
       this.state.candidate = candidate;
       this.state.progress = 0;
@@ -112,6 +122,7 @@ export class HoldRecognizer<T = string | number> {
       this._lastTriggerMs = nowMs;
       this._rawCandidate = null;
       this._stableFrames = 0;
+      this._stableMs = 0;
       this._lockedCandidate = null;
       this._elapsedMs = 0;
     }
@@ -122,6 +133,7 @@ export class HoldRecognizer<T = string | number> {
   reset(): void {
     this._rawCandidate = null;
     this._stableFrames = 0;
+    this._stableMs = 0;
     this._lockedCandidate = null;
     this._elapsedMs = 0;
     this._lastTriggerMs = -Infinity;
